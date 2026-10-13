@@ -1,10 +1,20 @@
 {
   "name": "context-carwash",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "A quiet context meter and deliberate fresh-session handoff for Claude Code.",
   "license": "MIT",
   "private": true,
   "type": "module",
+  "bin": {
+    "carwash": "bin/carwash.mjs"
+  },
+  "files": [
+    "bin",
+    "src"
+  ],
+  "scripts": {
+    "test": "node --test"
+  },
   "engines": {
     "node": ">=18"
   }
