@@ -48,6 +48,25 @@ Nothing here was run on Linux or Windows.
 - `last_assistant_message` beyond 11k characters.
 - Everything on Linux and Windows.
 
+## M3 live checks
+
+Run on 2026-10-13 against Claude Code 2.1.296 with Haiku 5.5, through `live.sh`, which attaches the real installer's output to a sandbox project.
+
+| Check | Result |
+|---|---|
+| `/wash light` then `/clear` | The `Stop` hook's `systemMessage` shows as `Stop says: Brief ready ✓ ...`, the status line redraws after it, and the cleared session answers from the brief. |
+| `prompt_id` | The same on `UserPromptExpansion`, `UserPromptSubmit`, and every `Stop` of that turn, including the ones that follow hook feedback. |
+| `/wash` typed while a reply is streaming | Queued. Its `UserPromptExpansion` fires after the earlier turn's `Stop`, so a `Stop` with a different `prompt_id` always means the wash turn is over. |
+| Over-cap rewrite | `hookSpecificOutput.additionalContext` from `Stop` continues the turn, shown as `Stop hook feedback`. The next `Stop` has `stop_hook_active: true`. A 420-token brief came back at 69 tokens, then 39. |
+| Blocked commands | Shown as `UserPromptExpansion operation blocked by hook:`, the reason, then `Original prompt:`. They do not redraw the status line. |
+| Hook matchers | `wash` on `UserPromptExpansion` and `startup|clear` on `SessionStart` both fire as written by the installer. |
+| New process pickup | After `/wash` and `/exit`, a new `claude` in the same folder shows `SessionStart:startup says: Loaded your Carwash brief ...` and answers from the brief. |
+| Brief over 10,000 characters | A 14,067-character brief: the session read Claude Code's saved copy without a permission prompt and answered from its last line. |
+| Headless sessions | `claude -p` fires `SessionStart` with `source: startup`. Its hooks see `CLAUDE_CODE_SESSION_ATTENDED=0` and `CLAUDE_CODE_ENTRYPOINT=sdk-cli`; an interactive session sees `1` and `cli`. Neither variable is documented. |
+| `refreshInterval: 5` | After `/wash discard` the status line dropped `Brief ready` within the interval. |
+
+Not checked live: `/wash load` with a real id (unit tests only), a brief picked up after 12 hours, and two terminals in one folder at the same time.
+
 ## Reproducing
 
 ```sh
@@ -58,3 +77,5 @@ python3 spikes/render.py raw.bin 120 40                               # view the
 ```
 
 Hook behaviour for a run is set in `$CARWASH_SANDBOX/out/<name>/behavior.json`; the format is described at the top of `log-hook.mjs`.
+
+For the real hooks instead of the logging ones, `spikes/live.sh [claude args]` installs the working tree into `$CARWASH_SANDBOX` and starts `claude` with those settings. It runs under `pty-drive.py` the same way.

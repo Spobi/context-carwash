@@ -1,17 +1,27 @@
+import { appendFileSync, statSync, writeFileSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { applyInstall, applyUninstall, describeInstall, describeUninstall, packageVersion, planInstall, planUninstall } from './install/install.mjs';
 import { UserError } from './install/settings.mjs';
+import { errorLogPath } from './paths.mjs';
 import { render } from './statusline/render.mjs';
 import { statusline } from './statusline/run.mjs';
+import { runHook } from './wash/hooks.mjs';
 
-const HELP = `Context Carwash: a quiet context meter for Claude Code.
+const HELP = `Context Carwash: a quiet context meter and a deliberate fresh start for Claude Code.
 
 Usage: carwash <command>
 
-  install [--yes]     Add the context meter to Claude Code's status line
+  install [--yes]     Add the context meter and the /wash command to Claude Code
   uninstall [--yes]   Undo everything install did
   preview             Print sample meters in this terminal
   --version           Print the version
+
+Inside Claude Code, once installed:
+
+  /wash [light | mid | detailed]   Write a handoff brief (mid if you do not say)
+  /clear                           Start fresh with the brief that is ready
+  /wash discard                    Drop the brief; /clear is a normal clear again
+  /wash load [id]                  Make a waiting brief the one /clear will use
 
 Nothing happens automatically, and nothing leaves this machine.`;
 
@@ -51,7 +61,29 @@ function preview(env, stdout) {
   for (const width of [120, 100, 80, 60, 30, 10]) out.push(`  ${String(width).padStart(3)} cols  ${render(sample(68), { env, columns: width - 4 }).text}`);
   out.push('', `This window (${columns + 4} columns), before any reply has arrived, then at 68%:`);
   out.push(`  ${render({}, { env, columns }).text}`, `  ${render(sample(68), { env, columns }).text}`);
+  out.push('', 'While /wash is writing a brief, and once one is ready for /clear:');
+  out.push(`  ${render(sample(68), { env, columns, state: { washing: 'mid' } }).text}`);
+  out.push(`  ${render(sample(68), { env, columns, state: { ready: { level: 'mid', tokens: 3100 } } }).text}`);
   stdout.write(out.join('\n') + '\n');
+}
+
+// A hook must never fail loudly inside someone's session, so its errors go to
+// a small private log instead of the screen.
+function logError(env, error) {
+  try {
+    const file = errorLogPath(env);
+    const line = `${new Date().toISOString()} ${error?.stack ?? error}\n`;
+    let size = 0;
+    try {
+      size = statSync(file).size;
+    } catch {
+      // no log yet
+    }
+    if (size > 200_000) writeFileSync(file, line, { mode: 0o600 });
+    else appendFileSync(file, line, { mode: 0o600 });
+  } catch {
+    // nowhere to write it
+  }
 }
 
 export async function main(argv, { env = process.env, stdin = process.stdin, stdout = process.stdout, stderr = process.stderr } = {}) {
@@ -62,6 +94,16 @@ export async function main(argv, { env = process.env, stdin = process.stdin, std
       case 'statusline':
         stdout.write((await statusline({ input: await readAll(stdin), env })) + '\n');
         return 0;
+      case 'hook': {
+        let output = null;
+        try {
+          output = runHook({ input: await readAll(stdin), env });
+        } catch (error) {
+          logError(env, error);
+        }
+        if (output) stdout.write(JSON.stringify(output) + '\n');
+        return 0;
+      }
       case 'install': {
         const plan = planInstall({ env });
         stdout.write(describeInstall(plan) + '\n\n');
@@ -70,7 +112,7 @@ export async function main(argv, { env = process.env, stdin = process.stdin, std
           return 1;
         }
         applyInstall(plan);
-        stdout.write('Installed. The meter appears in Claude Code after your next message, or when you start a new session.\n');
+        stdout.write('Installed. Start a new Claude Code session to get the meter and /wash.\n');
         return 0;
       }
       case 'uninstall': {

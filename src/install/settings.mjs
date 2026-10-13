@@ -1,6 +1,5 @@
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, statSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { existsSync, readFileSync, realpathSync } from 'node:fs';
 
 // An error whose message is meant for the user; shown without a stack trace.
 export class UserError extends Error {}
@@ -48,13 +47,4 @@ export function serializeSettings(data, format) {
   if (format.trailingNewline) text += '\n';
   if (format.eol !== '\n') text = text.replace(/\n/g, format.eol);
   return Buffer.from((format.bom ? '﻿' : '') + text, 'utf8');
-}
-
-// Replace a file's contents in one step, keeping its permissions.
-export function writeFileAtomic(file, bytes, mode) {
-  mkdirSync(dirname(file), { recursive: true });
-  const keepMode = mode ?? (existsSync(file) ? statSync(file).mode & 0o777 : 0o600);
-  const temp = join(dirname(file), `.${process.pid}.${Date.now()}.carwash-tmp`);
-  writeFileSync(temp, bytes, { mode: keepMode });
-  renameSync(temp, file);
 }

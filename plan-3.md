@@ -221,6 +221,22 @@ Decisions made after v3 was written. Where these conflict with the sections abov
 - **Click-link verification:** deferred to the end of the project (VS Code terminal, iTerm2, Ghostty). Checkpoint testing happens in Terminal.app, which exercises the typed-command fallback.
 - **Repository:** MIT license, private GitHub repository until release, one commit per milestone.
 
+### M3 decisions (2026-10-13)
+
+Made while building `/wash` and checked against Claude Code 2.1.296. Where these conflict with sections 6 and 7, these win.
+
+- **Who a brief belongs to:** the terminal that asked for it, meaning the Claude Code process, identified by `CLAUDE_PID` plus the process start time where the system can report one. Every session in that terminal sees `Brief ready`, and that terminal's next `/clear` delivers it. A terminal holds at most one ready brief: washing again in the same session replaces the earlier one, and anything else it held goes back to waiting for its folder.
+- **`/clear` only ever delivers the terminal's own brief.** The folder rule in section 7 applies at `startup` only. A `/clear` in a terminal that did not ask for a brief stays a normal clear, even when a brief is waiting for that folder.
+- **Pickup by a new terminal (`startup`):** a brief is loaded only when it is the one brief waiting for that folder, it is under 12 hours old, and the process that owned it has exited. In every other case nothing is loaded and one line lists what is waiting with the `/wash load <id>` to use.
+- **Unattended sessions never take a brief.** A `claude -p` run starts with `source: startup` too, so it is skipped when `CLAUDE_CODE_SESSION_ATTENDED` is `0` or the entry point is the SDK.
+- **`/wash load [id]` and `/wash discard [id]`** are answered by the `UserPromptExpansion` hook and never reach Claude. `load` makes a waiting brief, or one delivered in the last 24 hours, the brief this terminal's next `/clear` uses. It does not inject mid-session: starting fresh stays a `/clear`. Ids are six hex characters, and the start of one is enough.
+- **Recognising the brief:** the reply must open with a `# Carwash brief: <title>` heading, and the `Stop` hook's `prompt_id` must match the `/wash` prompt's. A reply without the heading saves nothing and says so.
+- **Size and caps:** there is no tokenizer in a zero-dependency package, so size is estimated at 3.5 characters per token, which errs towards over. A brief over its cap is sent back through `Stop` hook feedback for shortening, at most twice. If still over it is kept and labelled as over the cap.
+- **Idle refresh moved up from M4:** `statusLine.refreshInterval` is set to 5 seconds now. A command answered by the hook does not redraw the status line, so without it the line kept saying `Brief ready` after `/wash discard`. A refresh interval the user already set is kept.
+- **Retention:** a waiting brief expires after 48 hours. A delivered brief is kept for 24 hours (`CARWASH_RETAIN_HOURS`) and can be loaded again.
+- **What install adds:** three hooks (`SessionStart` for `startup|clear`, `Stop`, `UserPromptExpansion` for `wash`), each with a 20-second timeout, and the `/wash` skill at `~/.claude/skills/wash` with `disable-model-invocation`, so Claude can never run it on its own. Install refuses if a `/wash` command that is not Carwash's already exists.
+- **Words after the level** (`/wash mid focus on the auth bug`) are passed to Claude as a note on what to emphasise.
+
 ## 15. References
 
 - Status line: https://code.claude.com/docs/en/statusline

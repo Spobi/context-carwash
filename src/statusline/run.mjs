@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { installRecordPath } from '../paths.mjs';
 import { render } from './render.mjs';
+import { washState } from './state.mjs';
 import { availableColumns, visibleWidth } from './terminal.mjs';
 
 const SEPARATOR = ' │ ';
@@ -119,7 +120,13 @@ export async function statusline({ input, env = process.env, platform = process.
     } catch {
       // Unparseable input renders as an unknown reading.
     }
-    return compose(theirs, payload, { env, platform });
+    let state = null;
+    try {
+      state = washState(payload, { env, platform });
+    } catch {
+      // Without it the meter still renders, minus any word about a brief.
+    }
+    return compose(theirs, payload, { env, platform, state });
   } catch {
     return (theirs ?? '').replace(/\s+$/, '');
   }

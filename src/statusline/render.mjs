@@ -1,12 +1,6 @@
+import { LEVELS } from '../levels.mjs';
 import { colorAt, colorDepth, paint } from './color.mjs';
 import { availableColumns, clickModifier, isAppleTerminal, supportsLinks, visibleWidth } from './terminal.mjs';
-
-// Brief presets: each cap is a share of the context currently in use.
-export const LEVELS = [
-  { name: 'light', share: 0.01 },
-  { name: 'mid', share: 0.03 },
-  { name: 'detailed', share: 0.1 },
-];
 
 const BAR_CELLS = 15;
 const GAP = '  ';
@@ -81,6 +75,8 @@ function linkedAction(caps, links, modifier) {
 // options.links     { light, mid, detailed } URLs; without them, or in a
 //                   terminal that cannot click, the typed command is shown
 // options.barStyle  'ramp' (default) or 'solid'
+// options.state     { washing: level } while a brief is being written, or
+//                   { ready: { level, tokens } } once one is waiting for /clear
 //
 // Returns { text, hasBar }: the richest candidate that fits. Narrow widths lose
 // the brief caps first, then the used/total count, then the Terminal.app
@@ -97,7 +93,25 @@ export function render(payload, options = {}) {
   const caps = capLabels(used);
 
   let candidates;
-  if (options.links && supportsLinks(env)) {
+  if (options.state?.ready) {
+    // A brief is waiting: say so in place of the invitation to make one.
+    const { level, tokens } = options.state.ready;
+    const ready = `Brief ready ✓ ${level} ~${formatTokens(tokens)} · type /clear to start fresh with it`;
+    candidates = [
+      [pctSeg, tokSeg, barSeg, `${ready}. Old session stays in /resume.`],
+      [pctSeg, tokSeg, barSeg, ready],
+      [pctSeg, barSeg, ready],
+      [pctSeg, barSeg, 'Brief ready ✓ · type /clear'],
+      [pctSeg, 'Brief ready ✓ · type /clear'],
+      [pctSeg, 'Brief ready ✓'],
+    ];
+  } else if (options.state?.washing) {
+    candidates = [
+      [pctSeg, tokSeg, barSeg, 'washing…'],
+      [pctSeg, barSeg, 'washing…'],
+      [pctSeg, 'washing…'],
+    ];
+  } else if (options.links && supportsLinks(env)) {
     const modifier = clickModifier(options.platform);
     candidates = [
       [pctSeg, tokSeg, barSeg, linkedAction(caps, options.links, modifier)],
