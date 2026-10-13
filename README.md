@@ -31,10 +31,12 @@ Start a new Claude Code session afterwards.
 ## The meter
 
 ```text
-ctx 68%  ~136k/200k  [██████████░░░░░]  Type /wash light ≤1.4k | mid ≤4.1k | detailed ≤13.6k
+ctx ~136k/200k  [██████████░░░░░]  Type /wash light ≤1.4k | mid ≤4.1k | detailed ≤13.6k
 ```
 
-The percentage and token counts are estimates reported by Claude Code. The numbers after each level are the most a brief of that size may take: 1%, 3%, and 10% of the context in use. Narrower windows show less: the caps go first, then the token count, then the bar.
+The first number is how many tokens the conversation is using, and the second is how many the model's context window holds. Both come from Claude Code and are estimates. The bar shows the same thing as a proportion.
+
+The numbers after each level are the most tokens a brief of that size may take: a hundredth, three hundredths, and a tenth of what the conversation is using. Narrower windows show less: the caps go first, then the window size, then the bar.
 
 A full meter is information. It never triggers anything.
 

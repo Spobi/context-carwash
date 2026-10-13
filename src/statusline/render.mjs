@@ -79,16 +79,18 @@ function linkedAction(caps, links, modifier) {
 //                   { ready: { level, tokens } } once one is waiting for /clear
 //
 // Returns { text, hasBar }: the richest candidate that fits. Narrow widths lose
-// the brief caps first, then the used/total count, then the Terminal.app
-// sentence, then the bar, and finally everything but the percentage.
+// the brief caps first, then the window size, then the Terminal.app sentence,
+// then the bar, and finally everything but the tokens in use.
 export function render(payload, options = {}) {
   const env = options.env ?? process.env;
   const columns = options.columns ?? availableColumns(env);
   const depth = colorDepth(env);
   const { pct, used, size } = readUsage(payload);
 
-  const pctSeg = `ctx ${pct === null ? '--' : `${Math.round(pct)}%`}`;
-  const tokSeg = used && size ? `~${formatTokens(used)}/${formatTokens(size)}` : null;
+  // The reading is given in tokens, never as a percentage: a count is
+  // something people can picture, and the bar already shows the proportion.
+  const usedSeg = `ctx ${used ? `~${formatTokens(used)}` : '--'}`;
+  const countSeg = used && size ? `${usedSeg}/${formatTokens(size)}` : usedSeg;
   const barSeg = bar(pct, depth, options.barStyle ?? 'ramp');
   const caps = capLabels(used);
 
@@ -98,44 +100,44 @@ export function render(payload, options = {}) {
     const { level, tokens } = options.state.ready;
     const ready = `Brief ready ✓ ${level} ~${formatTokens(tokens)} · type /clear to start fresh with it`;
     candidates = [
-      [pctSeg, tokSeg, barSeg, `${ready}. Old session stays in /resume.`],
-      [pctSeg, tokSeg, barSeg, ready],
-      [pctSeg, barSeg, ready],
-      [pctSeg, barSeg, 'Brief ready ✓ · type /clear'],
-      [pctSeg, 'Brief ready ✓ · type /clear'],
-      [pctSeg, 'Brief ready ✓'],
+      [countSeg, barSeg, `${ready}. Old session stays in /resume.`],
+      [countSeg, barSeg, ready],
+      [usedSeg, barSeg, ready],
+      [usedSeg, barSeg, 'Brief ready ✓ · type /clear'],
+      [usedSeg, 'Brief ready ✓ · type /clear'],
+      [usedSeg, 'Brief ready ✓'],
     ];
   } else if (options.state?.washing) {
     candidates = [
-      [pctSeg, tokSeg, barSeg, 'washing…'],
-      [pctSeg, barSeg, 'washing…'],
-      [pctSeg, 'washing…'],
+      [countSeg, barSeg, 'washing…'],
+      [usedSeg, barSeg, 'washing…'],
+      [usedSeg, 'washing…'],
     ];
   } else if (options.links && supportsLinks(env)) {
     const modifier = clickModifier(options.platform);
     candidates = [
-      [pctSeg, tokSeg, barSeg, linkedAction(caps, options.links, modifier)],
-      [pctSeg, tokSeg, barSeg, linkedAction(null, options.links, modifier)],
-      [pctSeg, barSeg, linkedAction(null, options.links, modifier)],
-      [pctSeg, linkedAction(null, options.links, modifier)],
+      [countSeg, barSeg, linkedAction(caps, options.links, modifier)],
+      [countSeg, barSeg, linkedAction(null, options.links, modifier)],
+      [usedSeg, barSeg, linkedAction(null, options.links, modifier)],
+      [usedSeg, linkedAction(null, options.links, modifier)],
     ];
   } else {
     const apple = isAppleTerminal(env);
     candidates = [
-      [pctSeg, tokSeg, barSeg, typedHint(caps, apple)],
-      [pctSeg, tokSeg, barSeg, typedHint(null, apple)],
-      [pctSeg, barSeg, typedHint(null, apple)],
-      // Once the Terminal.app sentence cannot fit, the count gets its room back.
-      [pctSeg, tokSeg, barSeg, typedHint(null, false)],
-      [pctSeg, barSeg, typedHint(null, false)],
-      [pctSeg, typedHint(null, false)],
+      [countSeg, barSeg, typedHint(caps, apple)],
+      [countSeg, barSeg, typedHint(null, apple)],
+      [usedSeg, barSeg, typedHint(null, apple)],
+      // Once the Terminal.app sentence cannot fit, the window size gets its room back.
+      [countSeg, barSeg, typedHint(null, false)],
+      [usedSeg, barSeg, typedHint(null, false)],
+      [usedSeg, typedHint(null, false)],
     ];
   }
-  candidates.push([pctSeg]);
+  candidates.push([countSeg], [usedSeg]);
 
   for (const segments of candidates) {
-    const text = segments.filter(Boolean).join(GAP);
+    const text = segments.join(GAP);
     if (visibleWidth(text) <= columns) return { text, hasBar: segments.includes(barSeg) };
   }
-  return { text: pctSeg, hasBar: false };
+  return { text: usedSeg, hasBar: false };
 }

@@ -237,6 +237,14 @@ Made while building `/wash` and checked against Claude Code 2.1.296. Where these
 - **What install adds:** three hooks (`SessionStart` for `startup|clear`, `Stop`, `UserPromptExpansion` for `wash`), each with a 20-second timeout, and the `/wash` skill at `~/.claude/skills/wash` with `disable-model-invocation`, so Claude can never run it on its own. Install refuses if a `/wash` command that is not Carwash's already exists.
 - **Words after the level** (`/wash mid focus on the auth bug`) are passed to Claude as a note on what to emphasise.
 
+### Meter shows tokens, not a percentage (2026-10-13)
+
+Decided by the user after testing M3: a percentage is nebulous and people do not know what it stands for, so the meter gives the tokens in use instead. This replaces the `ctx 68%  ~136k/200k` form in section 4 and the narrow-terminal order above.
+
+- The reading is `ctx ~136k/200k`: tokens in use, then the window size. Thousands are shortened (`20k`, not `20,000`). Before the first reply it is `ctx --`.
+- No percentage appears anywhere in the status line. The bar and its colour still follow the proportion.
+- Narrow terminals lose the brief caps first, then the window size (`ctx ~136k`), then the Terminal.app sentence (which gives the window size its room back), then the bar, then everything but the count.
+
 ## 15. References
 
 - Status line: https://code.claude.com/docs/en/statusline

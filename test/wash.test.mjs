@@ -601,28 +601,29 @@ test('the status line says when a brief is being written and when one is ready',
   // End to end, under the pid Claude Code reports.
   wash('light', { me: { pid: 424_242, start: null }, prompt: 'P2' });
   const line = await statusline({ input: JSON.stringify(payload), env: { ...env, CLAUDE_PID: '424242', TERM_PROGRAM: 'xterm', NO_COLOR: '1' } });
-  assert.equal(line, 'ctx 68%  ~136k/200k  [██████████░░░░░]  Brief ready ✓ light ~61 · type /clear to start fresh with it. Old session stays in /resume.');
+  assert.equal(line, 'ctx ~136k/200k  [██████████░░░░░]  Brief ready ✓ light ~61 · type /clear to start fresh with it. Old session stays in /resume.');
 });
 
 test('wash states fit any width, losing detail before overflowing', () => {
   const payload = { context_window: { context_window_size: 200_000, used_percentage: 68 } };
   const env = { TERM_PROGRAM: 'Apple_Terminal', NO_COLOR: '1' };
   const ready = (columns) => render(payload, { env, columns, state: { ready: { level: 'mid', tokens: 3100 } } }).text;
-  assert.equal(ready(Infinity), 'ctx 68%  ~136k/200k  [██████████░░░░░]  Brief ready ✓ mid ~3.1k · type /clear to start fresh with it. Old session stays in /resume.');
-  assert.equal(ready(116), 'ctx 68%  ~136k/200k  [██████████░░░░░]  Brief ready ✓ mid ~3.1k · type /clear to start fresh with it');
-  assert.equal(ready(90), 'ctx 68%  [██████████░░░░░]  Brief ready ✓ mid ~3.1k · type /clear to start fresh with it');
-  assert.equal(ready(60), 'ctx 68%  [██████████░░░░░]  Brief ready ✓ · type /clear');
-  assert.equal(ready(40), 'ctx 68%  Brief ready ✓ · type /clear');
-  assert.equal(ready(30), 'ctx 68%  Brief ready ✓');
-  assert.equal(ready(10), 'ctx 68%');
+  assert.equal(ready(Infinity), 'ctx ~136k/200k  [██████████░░░░░]  Brief ready ✓ mid ~3.1k · type /clear to start fresh with it. Old session stays in /resume.');
+  assert.equal(ready(116), 'ctx ~136k/200k  [██████████░░░░░]  Brief ready ✓ mid ~3.1k · type /clear to start fresh with it');
+  assert.equal(ready(90), 'ctx ~136k  [██████████░░░░░]  Brief ready ✓ mid ~3.1k · type /clear to start fresh with it');
+  assert.equal(ready(60), 'ctx ~136k  [██████████░░░░░]  Brief ready ✓ · type /clear');
+  assert.equal(ready(40), 'ctx ~136k  Brief ready ✓ · type /clear');
+  assert.equal(ready(30), 'ctx ~136k  Brief ready ✓');
+  assert.equal(ready(20), 'ctx ~136k/200k');
+  assert.equal(ready(10), 'ctx ~136k');
 
   const washing = (columns) => render(payload, { env, columns, state: { washing: 'mid' } }).text;
-  assert.equal(washing(Infinity), 'ctx 68%  ~136k/200k  [██████████░░░░░]  washing…');
-  assert.equal(washing(40), 'ctx 68%  [██████████░░░░░]  washing…');
-  assert.equal(washing(20), 'ctx 68%  washing…');
-  assert.equal(washing(10), 'ctx 68%');
+  assert.equal(washing(Infinity), 'ctx ~136k/200k  [██████████░░░░░]  washing…');
+  assert.equal(washing(40), 'ctx ~136k  [██████████░░░░░]  washing…');
+  assert.equal(washing(20), 'ctx ~136k  washing…');
+  assert.equal(washing(10), 'ctx ~136k');
 
-  for (let columns = 7; columns <= 140; columns++) {
+  for (let columns = 9; columns <= 140; columns++) {
     assert.ok(visibleWidth(ready(columns)) <= columns, `ready overflows at ${columns}`);
     assert.ok(visibleWidth(washing(columns)) <= columns, `washing overflows at ${columns}`);
   }

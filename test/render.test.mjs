@@ -21,6 +21,7 @@ test('formatTokens', () => {
   assert.equal(formatTokens(1360), '1.4k');
   assert.equal(formatTokens(4080), '4.1k');
   assert.equal(formatTokens(13600), '13.6k');
+  assert.equal(formatTokens(20_000), '20k');
   assert.equal(formatTokens(99_960), '100k');
   assert.equal(formatTokens(136_000), '136k');
   assert.equal(formatTokens(200_000), '200k');
@@ -92,17 +93,38 @@ test('readUsage tolerates every missing or null field', () => {
   assert.equal(readUsage({ context_window: { used_percentage: '68' } }).pct, null);
 });
 
-test('full line matches the plan example', () => {
+test('the reading is tokens in use out of the window size, then the bar and the caps', () => {
   assert.equal(
     render(payload(68), { env: plain, columns: Infinity }).text,
-    'ctx 68%  ~136k/200k  [██████████░░░░░]  Type /wash light ≤1.4k | mid ≤4.1k | detailed ≤13.6k',
+    'ctx ~136k/200k  [██████████░░░░░]  Type /wash light ≤1.4k | mid ≤4.1k | detailed ≤13.6k',
   );
+  assert.equal(render(payload(10), { env: plain, columns: Infinity }).text, 'ctx ~20k/200k  [██░░░░░░░░░░░░░]  Type /wash light ≤200 | mid ≤600 | detailed ≤2k');
+  assert.equal(render(payload(3.8, 1_000_000), { env: plain, columns: Infinity }).text, 'ctx ~38k/1M  [█░░░░░░░░░░░░░░]  Type /wash light ≤380 | mid ≤1.1k | detailed ≤3.8k');
+  // Usage known but not the window size: the count stands alone and the bar stays empty.
+  assert.equal(
+    render({ context_window: { current_usage: { input_tokens: 136_000 } } }, { env: plain, columns: Infinity }).text,
+    'ctx ~136k  [░░░░░░░░░░░░░░░]  Type /wash light ≤1.4k | mid ≤4.1k | detailed ≤13.6k',
+  );
+});
+
+test('no percentage is ever shown', () => {
+  const links = { light: 'http://127.0.0.1:1/l', mid: 'http://127.0.0.1:1/m', detailed: 'http://127.0.0.1:1/d' };
+  const states = [undefined, { washing: 'mid' }, { ready: { level: 'mid', tokens: 3100 } }];
+  for (const env of [plain, apple, { TERM_PROGRAM: 'iTerm.app', NO_COLOR: '1' }]) {
+    for (const state of states) {
+      for (const columns of [Infinity, 120, 100, 80, 60, 40, 20, 9]) {
+        for (const input of [payload(68), payload(100), payload(null), {}]) {
+          assert.doesNotMatch(render(input, { env, columns, state, links }).text, /%/);
+        }
+      }
+    }
+  }
 });
 
 test('Terminal.app gets the permanent typed-command sentence', () => {
   assert.equal(
     render(payload(68), { env: apple, columns: Infinity }).text,
-    "ctx 68%  ~136k/200k  [██████████░░░░░]  Terminal.app can't click links. Type /wash light ≤1.4k | mid ≤4.1k | detailed ≤13.6k",
+    "ctx ~136k/200k  [██████████░░░░░]  Terminal.app can't click links. Type /wash light ≤1.4k | mid ≤4.1k | detailed ≤13.6k",
   );
 });
 
@@ -114,20 +136,28 @@ test('unknown reading shows dashes, an empty bar and no estimates', () => {
 
 test('narrow widths drop detail in order and always fit', () => {
   const at = (columns, env = apple) => render(payload(68), { env, columns });
-  assert.equal(at(124).text, "ctx 68%  ~136k/200k  [██████████░░░░░]  Terminal.app can't click links. Type /wash light ≤1.4k | mid ≤4.1k | detailed ≤13.6k");
-  assert.equal(at(123).text, "ctx 68%  ~136k/200k  [██████████░░░░░]  Terminal.app can't click links. Type /wash light | mid | detailed");
-  assert.equal(at(105).text, "ctx 68%  ~136k/200k  [██████████░░░░░]  Terminal.app can't click links. Type /wash light | mid | detailed");
-  assert.equal(at(104).text, "ctx 68%  [██████████░░░░░]  Terminal.app can't click links. Type /wash light | mid | detailed");
-  assert.equal(at(93).text, "ctx 68%  [██████████░░░░░]  Terminal.app can't click links. Type /wash light | mid | detailed");
-  assert.equal(at(92).text, 'ctx 68%  ~136k/200k  [██████████░░░░░]  Type /wash light | mid | detailed');
-  assert.equal(at(76).text, 'ctx 68%  ~136k/200k  [██████████░░░░░]  Type /wash light | mid | detailed');
-  assert.equal(at(72).text, 'ctx 68%  [██████████░░░░░]  Type /wash light | mid | detailed');
-  assert.equal(at(56).text, 'ctx 68%  Type /wash light | mid | detailed');
-  assert.equal(at(26).text, 'ctx 68%');
-  assert.equal(at(3).text, 'ctx 68%');
-  assert.equal(at(76).hasBar, true);
-  assert.equal(at(56).hasBar, false);
-  for (let columns = 7; columns <= 130; columns++) {
+  assert.equal(at(119).text, "ctx ~136k/200k  [██████████░░░░░]  Terminal.app can't click links. Type /wash light ≤1.4k | mid ≤4.1k | detailed ≤13.6k");
+  // The caps go first.
+  assert.equal(at(118).text, "ctx ~136k/200k  [██████████░░░░░]  Terminal.app can't click links. Type /wash light | mid | detailed");
+  assert.equal(at(100).text, "ctx ~136k/200k  [██████████░░░░░]  Terminal.app can't click links. Type /wash light | mid | detailed");
+  // Then the window size.
+  assert.equal(at(99).text, "ctx ~136k  [██████████░░░░░]  Terminal.app can't click links. Type /wash light | mid | detailed");
+  assert.equal(at(95).text, "ctx ~136k  [██████████░░░░░]  Terminal.app can't click links. Type /wash light | mid | detailed");
+  // Then the Terminal.app sentence, which gives the window size its room back.
+  assert.equal(at(94).text, 'ctx ~136k/200k  [██████████░░░░░]  Type /wash light | mid | detailed');
+  assert.equal(at(68).text, 'ctx ~136k/200k  [██████████░░░░░]  Type /wash light | mid | detailed');
+  assert.equal(at(67).text, 'ctx ~136k  [██████████░░░░░]  Type /wash light | mid | detailed');
+  assert.equal(at(63).text, 'ctx ~136k  [██████████░░░░░]  Type /wash light | mid | detailed');
+  // Then the bar, then everything but the count.
+  assert.equal(at(62).text, 'ctx ~136k  Type /wash light | mid | detailed');
+  assert.equal(at(44).text, 'ctx ~136k  Type /wash light | mid | detailed');
+  assert.equal(at(43).text, 'ctx ~136k/200k');
+  assert.equal(at(14).text, 'ctx ~136k/200k');
+  assert.equal(at(13).text, 'ctx ~136k');
+  assert.equal(at(3).text, 'ctx ~136k');
+  assert.equal(at(68).hasBar, true);
+  assert.equal(at(62).hasBar, false);
+  for (let columns = 9; columns <= 130; columns++) {
     for (const env of [apple, plain, { TERM_PROGRAM: 'Apple_Terminal', COLORTERM: 'truecolor' }]) {
       assert.ok(visibleWidth(render(payload(68), { env, columns }).text) <= columns, `overflow at ${columns}`);
     }
@@ -156,7 +186,7 @@ test('links wrap only the level names, and only where the terminal can click', (
   const links = { light: 'http://127.0.0.1:1/l', mid: 'http://127.0.0.1:1/m', detailed: 'http://127.0.0.1:1/d' };
   const iterm = { TERM_PROGRAM: 'iTerm.app', NO_COLOR: '1' };
   const linked = render(payload(68), { env: iterm, columns: Infinity, links, platform: 'darwin' }).text;
-  assert.equal(strip(linked), 'ctx 68%  ~136k/200k  [██████████░░░░░]  Compress & New Session (⌘-click): light ≤1.4k · mid ≤4.1k · detailed ≤13.6k');
+  assert.equal(strip(linked), 'ctx ~136k/200k  [██████████░░░░░]  Compress & New Session (⌘-click): light ≤1.4k · mid ≤4.1k · detailed ≤13.6k');
   assert.deepEqual(
     [...linked.matchAll(/\x1b\]8;;([^\x07]+)\x07([^\x1b]+)\x1b\]8;;\x07/g)].map((m) => [m[1], m[2]]),
     [[links.light, 'light'], [links.mid, 'mid'], [links.detailed, 'detailed']],

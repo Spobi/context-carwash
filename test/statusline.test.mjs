@@ -24,7 +24,7 @@ const input = JSON.stringify({
   session_id: 'abc',
   context_window: { context_window_size: 200_000, used_percentage: 68, current_usage: { input_tokens: 136_000 } },
 });
-const OURS = 'ctx 68%  ~136k/200k  [██████████░░░░░]  Type /wash light ≤1.4k | mid ≤4.1k | detailed ≤13.6k';
+const OURS = 'ctx ~136k/200k  [██████████░░░░░]  Type /wash light ≤1.4k | mid ≤4.1k | detailed ≤13.6k';
 
 // A Carwash home whose install record says the user had this status line.
 function homeWrapping(command) {
@@ -78,17 +78,16 @@ test('a wrapped status line that fails, prints nothing or hangs does not break t
 test('compose puts the meter beside a short line and below a long or crowded one', () => {
   const p = JSON.parse(input);
   const options = { env: plain, columns: 100 };
-  assert.equal(compose('main ✓', p, options), 'main ✓ │ ctx 68%  ~136k/200k  [██████████░░░░░]  Type /wash light | mid | detailed');
+  assert.equal(compose('main ✓', p, options), `main ✓ │ ${OURS}`);
   // Colour codes in their output do not count towards its width.
-  assert.equal(
-    compose('\x1b[32mmain ✓\x1b[0m\n', p, options),
-    '\x1b[32mmain ✓\x1b[0m │ ctx 68%  ~136k/200k  [██████████░░░░░]  Type /wash light | mid | detailed',
-  );
+  assert.equal(compose('\x1b[32mmain ✓\x1b[0m\n', p, options), `\x1b[32mmain ✓\x1b[0m │ ${OURS}`);
+  // Less room beside theirs: the meter gives up detail before it gives up the line.
+  assert.equal(compose('x'.repeat(20), p, options), `${'x'.repeat(20)} │ ctx ~136k/200k  [██████████░░░░░]  Type /wash light | mid | detailed`);
   // Not enough room left for the bar: the meter moves to its own line.
   const long = 'x'.repeat(80);
   assert.equal(compose(long, p, options), `${long}\n${OURS}`);
   // Multi-line output: only the last line is considered.
-  assert.equal(compose(`${long}\nmain ✓`, p, options), `${long}\nmain ✓ │ ctx 68%  ~136k/200k  [██████████░░░░░]  Type /wash light | mid | detailed`);
+  assert.equal(compose(`${long}\nmain ✓`, p, options), `${long}\nmain ✓ │ ${OURS}`);
   assert.equal(compose(null, p, options), OURS);
   assert.equal(compose('  \n', p, options), OURS);
 });
@@ -111,7 +110,7 @@ test('the carwash statusline command works end to end', () => {
   const home = homeWrapping();
   let result = run(input, { CARWASH_HOME: home, COLUMNS: '80' });
   assert.equal(result.status, 0);
-  assert.equal(result.stdout, 'ctx 68%  ~136k/200k  [██████████░░░░░]  Type /wash light | mid | detailed\n');
+  assert.equal(result.stdout, 'ctx ~136k/200k  [██████████░░░░░]  Type /wash light | mid | detailed\n');
   assert.equal(result.stderr, '');
 
   result = run('garbage', { CARWASH_HOME: home });

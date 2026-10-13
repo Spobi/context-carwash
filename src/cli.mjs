@@ -59,7 +59,7 @@ function preview(env, stdout) {
   }
   out.push('Narrower windows drop detail in this order:');
   for (const width of [120, 100, 80, 60, 30, 10]) out.push(`  ${String(width).padStart(3)} cols  ${render(sample(68), { env, columns: width - 4 }).text}`);
-  out.push('', `This window (${columns + 4} columns), before any reply has arrived, then at 68%:`);
+  out.push('', `This window (${columns + 4} columns), before any reply has arrived, then with 136k in use:`);
   out.push(`  ${render({}, { env, columns }).text}`, `  ${render(sample(68), { env, columns }).text}`);
   out.push('', 'While /wash is writing a brief, and once one is ready for /clear:');
   out.push(`  ${render(sample(68), { env, columns, state: { washing: 'mid' } }).text}`);
