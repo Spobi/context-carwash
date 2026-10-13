@@ -4,3 +4,4 @@ node_modules/
 coverage/
 .claude/settings.local.json
 spikes/**/out/
+__pycache__/
