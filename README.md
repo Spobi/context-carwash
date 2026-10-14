@@ -5,7 +5,7 @@ A small, local-first utility for Claude Code.
 - **Meter:** a quiet estimate of the active context window in the status line.
 - **Wash:** when you ask, Claude writes a short handoff brief, and your next `/clear` starts a fresh session that begins with it.
 
-Nothing happens automatically, and nothing leaves your machine.
+Nothing happens automatically, and nothing leaves your machine. The one exception: the installer asks npm whether a newer version is out.
 
 **Status:** pre-release. The meter and the typed `/wash` command work today. Clickable links in the status line and the one-step restart are not built yet. See [plan-3.md](plan-3.md) for the design.
 
@@ -18,7 +18,7 @@ npx context-carwash preview     # sample meters in your terminal, nothing instal
 npx context-carwash install     # lists what it will change, then asks
 ```
 
-To update later, run `npx context-carwash@latest install` again. Waiting briefs are kept.
+To update later, run `npx context-carwash@latest install` again. Waiting briefs are kept. The `@latest` matters: without it npx may rerun the copy it downloaded last time. If it does, the installer says a newer version is out before asking to go ahead.
 
 The installer copies itself to `~/.carwash/app` and makes three changes to Claude Code, all listed before you confirm:
 
@@ -76,7 +76,7 @@ Things worth knowing:
 
 ## Where things are kept
 
-Briefs are stored in `~/.carwash`, readable only by you, and never inside your project. Nothing is uploaded, and there is no telemetry.
+Briefs are stored in `~/.carwash`, readable only by you, and never inside your project. Nothing is uploaded, and there is no telemetry. The installer reads the newest version number from npm, and nothing else goes online; set `CARWASH_NO_UPDATE_CHECK=1` to skip even that.
 
 If a hook fails it stays silent and writes the error to `~/.carwash/errors.log`.
 

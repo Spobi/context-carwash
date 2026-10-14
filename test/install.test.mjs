@@ -14,7 +14,8 @@ const posix = process.platform !== 'win32';
 // A throwaway Claude config directory and Carwash home.
 function sandbox(settingsText) {
   const root = mkdtempSync(join(tmpdir(), 'carwash-test-'));
-  const env = { ...process.env, CARWASH_HOME: join(root, 'carwash'), CLAUDE_CONFIG_DIR: join(root, 'claude') };
+  // CARWASH_NO_UPDATE_CHECK keeps the installer offline; the check has its own tests.
+  const env = { ...process.env, CARWASH_HOME: join(root, 'carwash'), CLAUDE_CONFIG_DIR: join(root, 'claude'), CARWASH_NO_UPDATE_CHECK: '1' };
   for (const key of ['COLUMNS', 'LINES', 'FORCE_HYPERLINK', 'TMUX', 'STY']) delete env[key];
   const file = join(env.CLAUDE_CONFIG_DIR, 'settings.json');
   mkdirSync(env.CLAUDE_CONFIG_DIR, { recursive: true });

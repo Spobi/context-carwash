@@ -2,6 +2,7 @@ import { appendFileSync, existsSync, statSync, writeFileSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { applyInstall, applyUninstall, describeInstall, describeUninstall, packageVersion, planInstall, planUninstall } from './install/install.mjs';
 import { UserError } from './install/settings.mjs';
+import { latestVersion, updateNotice } from './install/update.mjs';
 import { errorLogPath, welcomedPath } from './paths.mjs';
 import { render } from './statusline/render.mjs';
 import { statusline } from './statusline/run.mjs';
@@ -24,7 +25,7 @@ Inside Claude Code, once installed:
   /wash load [id]                  Make a waiting brief the one /clear will use
   /wash help                       Explain the meter and the options
 
-Nothing happens automatically, and nothing leaves this machine.`;
+Nothing happens automatically. Only install goes online, to ask npm for the newest version.`;
 
 async function readAll(stream) {
   if (stream.isTTY) return '';
@@ -87,7 +88,7 @@ function logError(env, error) {
   }
 }
 
-export async function main(argv, { env = process.env, stdin = process.stdin, stdout = process.stdout, stderr = process.stderr } = {}) {
+export async function main(argv, { env = process.env, stdin = process.stdin, stdout = process.stdout, stderr = process.stderr, latest = latestVersion } = {}) {
   const [command, ...rest] = argv;
   const yes = rest.includes('--yes') || rest.includes('-y');
   try {
@@ -108,6 +109,9 @@ export async function main(argv, { env = process.env, stdin = process.stdin, std
       case 'install': {
         const plan = planInstall({ env });
         stdout.write(describeInstall(plan) + '\n\n');
+        // Last, so it sits right above the question it changes the answer to.
+        const notice = updateNotice(packageVersion(), await latest({ env }));
+        if (notice) stdout.write(notice + '\n\n');
         if (!(await confirm('Proceed?', { yes, stdin, stdout }))) {
           stdout.write('Nothing was changed.\n');
           return 1;
