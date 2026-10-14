@@ -2,8 +2,8 @@
 
 Context Carwash adds a line to Claude Code in your terminal that:
 
-1. Shows the current conversation's context size.
-2. Lets you compress your context and start a new session without losing the important details.
+1. **The Meter:** shows the current conversation's context size.
+2. **/wash:** lets you compress your context and start a new session without losing important details.
 
 Pretty simple app, but I've found it helpful. Everything is local, but you can share your token savings anonymously with me if you'd like with `npx context-carwash stats --share`.
 
