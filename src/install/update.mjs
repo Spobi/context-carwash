@@ -1,5 +1,8 @@
-// Whether a newer Context Carwash is on npm. Only the installer asks, since
-// npx can quietly rerun a copy it downloaded earlier. The meter and /wash never
+import { spawnSync } from 'node:child_process';
+
+// Whether a newer Context Carwash is on npm, and handing over to it. Only the
+// installer asks, since npx can quietly rerun a copy it downloaded earlier, and
+// people should not have to know to type @latest. The meter and /wash never
 // use the network.
 
 const LATEST_URL = 'https://registry.npmjs.org/context-carwash/latest';
@@ -34,11 +37,17 @@ export async function latestVersion({ env = process.env, timeoutMs = TIMEOUT_MS 
   }
 }
 
-// What the installer says before asking, or null when this is the latest.
-export function updateNotice(current, latest) {
-  if (!isNewer(latest, current)) return null;
-  return [
-    `A newer Context Carwash is out: ${latest}. This installer is ${current}.`,
-    'To install the newer one, answer no and run:  npx context-carwash@latest install',
-  ].join('\n');
+// Run `carwash <args>` from the given release instead of this one, in this
+// terminal, so its questions reach the person. Pinned to the exact version, so
+// the newer copy finds itself up to date and does not hand off again. Resolves
+// to its exit code, or null if npx could not be started.
+export function runRelease(version, args, { env = process.env, platform = process.platform } = {}) {
+  const npx = platform === 'win32' ? 'npx.cmd' : 'npx';
+  // npx.cmd is a batch file, which Windows only runs through a shell.
+  const result = spawnSync(npx, ['--yes', `context-carwash@${version}`, ...args], {
+    stdio: 'inherit',
+    env: { ...env, CARWASH_HANDED_OFF: version },
+    shell: platform === 'win32',
+  });
+  return result.error || result.status === null ? null : result.status;
 }

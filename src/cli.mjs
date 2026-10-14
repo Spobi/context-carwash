@@ -2,7 +2,7 @@ import { appendFileSync, existsSync, statSync, writeFileSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { applyInstall, applyUninstall, describeInstall, describeUninstall, packageVersion, planInstall, planUninstall } from './install/install.mjs';
 import { UserError } from './install/settings.mjs';
-import { latestVersion, updateNotice } from './install/update.mjs';
+import { isNewer, latestVersion, runRelease } from './install/update.mjs';
 import { errorLogPath, welcomedPath } from './paths.mjs';
 import { render } from './statusline/render.mjs';
 import { statusline } from './statusline/run.mjs';
@@ -88,7 +88,7 @@ function logError(env, error) {
   }
 }
 
-export async function main(argv, { env = process.env, stdin = process.stdin, stdout = process.stdout, stderr = process.stderr, latest = latestVersion } = {}) {
+export async function main(argv, { env = process.env, stdin = process.stdin, stdout = process.stdout, stderr = process.stderr, latest = latestVersion, handOff = runRelease } = {}) {
   const [command, ...rest] = argv;
   const yes = rest.includes('--yes') || rest.includes('-y');
   try {
@@ -107,11 +107,21 @@ export async function main(argv, { env = process.env, stdin = process.stdin, std
         return 0;
       }
       case 'install': {
+        // npx may be rerunning an old download. If npm has something newer,
+        // that release does the install. Once only: the newer copy is not
+        // asked to check again.
+        if (!env.CARWASH_HANDED_OFF) {
+          const current = packageVersion();
+          const newest = await latest({ env });
+          if (isNewer(newest, current)) {
+            stdout.write(`This is Context Carwash ${current}, and ${newest} is out. Installing ${newest} instead.\n\n`);
+            const status = handOff(newest, argv, { env });
+            if (status !== null) return status;
+            stdout.write(`Could not start ${newest}, so continuing with ${current}. For the newer one: npx context-carwash@latest install\n\n`);
+          }
+        }
         const plan = planInstall({ env });
         stdout.write(describeInstall(plan) + '\n\n');
-        // Last, so it sits right above the question it changes the answer to.
-        const notice = updateNotice(packageVersion(), await latest({ env }));
-        if (notice) stdout.write(notice + '\n\n');
         if (!(await confirm('Proceed?', { yes, stdin, stdout }))) {
           stdout.write('Nothing was changed.\n');
           return 1;

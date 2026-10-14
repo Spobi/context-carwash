@@ -18,7 +18,7 @@ npx context-carwash preview     # sample meters in your terminal, nothing instal
 npx context-carwash install     # lists what it will change, then asks
 ```
 
-To update later, run `npx context-carwash@latest install` again. Waiting briefs are kept. The `@latest` matters: without it npx may rerun the copy it downloaded last time. If it does, the installer says a newer version is out before asking to go ahead.
+To update later, run `npx context-carwash install` again. Waiting briefs are kept. If npx reruns an older copy it downloaded before, the installer notices that npm has a newer version and installs that one instead.
 
 The installer copies itself to `~/.carwash/app` and makes three changes to Claude Code, all listed before you confirm:
 
