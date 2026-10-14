@@ -26,6 +26,13 @@ export const consumedDir = (env = process.env) => join(carwashHome(env), 'consum
 // Small per-session notes: the last usage reading and a wash in progress.
 export const sessionsDir = (env = process.env) => join(carwashHome(env), 'sessions');
 
+// The savings ledger behind `carwash stats`: one file per brief written.
+export const statsDir = (env = process.env) => join(carwashHome(env), 'stats');
+
+// A random id made the first time someone shares their stats, so a repeat
+// share can replace the earlier one. It is not derived from anything.
+export const shareIdPath = (env = process.env) => join(carwashHome(env), 'share-id');
+
 export const errorLogPath = (env = process.env) => join(carwashHome(env), 'errors.log');
 
 // Present once the first-run welcome has been shown.

@@ -1,7 +1,7 @@
 ---
 name: wash
 description: Context Carwash. Writes a short handoff brief of this session, so that /clear can start a fresh session that carries on from it.
-argument-hint: "[light | mid | detailed | discard | load <id> | help]"
+argument-hint: "[light | mid | detailed | discard | load <id> | stats | help]"
 disable-model-invocation: true
 metadata:
   installed-by: context-carwash

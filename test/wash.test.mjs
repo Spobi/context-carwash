@@ -116,7 +116,7 @@ test('/wash tells Claude the size limit and marks the session as washing', () =>
   assert.equal(mid.hookSpecificOutput.hookEventName, 'UserPromptExpansion');
   assert.match(mid.hookSpecificOutput.additionalContext, /level mid\. This session is using about 136k tokens, so the ceiling for this brief is 4080 tokens/);
   assert.match(mid.hookSpecificOutput.additionalContext, /a limit, not a target/);
-  assert.deepEqual({ ...currentWash(env, 'S1', NOW), startedAt: 0 }, { promptId: 'P1', level: 'mid', cap: 4080, used: 136_000, startedAt: 0, rewrites: 0 });
+  assert.deepEqual({ ...currentWash(env, 'S1', NOW), startedAt: 0 }, { promptId: 'P1', level: 'mid', cap: 4080, used: 136_000, size: 200_000, startedAt: 0, rewrites: 0 });
 
   assert.match(slash('light').hookSpecificOutput.additionalContext, /level light.*1360 tokens/);
   assert.match(slash('DETAILED  focus on the auth bug').hookSpecificOutput.additionalContext, /level detailed.*13600 tokens/);
@@ -463,7 +463,7 @@ test('/wash load makes a waiting brief the one /clear will use', () => {
 
 test('unknown /wash arguments explain themselves instead of reaching Claude', () => {
   const { env, slash } = sandbox();
-  assert.deepEqual(slash('bogus'), { decision: 'block', reason: 'Carwash: /wash does not know "bogus". Usage: /wash [light | mid | detailed], /wash discard [id], /wash load [id], /wash help' });
+  assert.deepEqual(slash('bogus'), { decision: 'block', reason: 'Carwash: /wash does not know "bogus". Usage: /wash [light | mid | detailed], /wash discard [id], /wash load [id], /wash stats, /wash help' });
   assert.equal(currentWash(env, 'S1', NOW), null);
 });
 

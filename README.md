@@ -5,7 +5,7 @@ A small, local-first utility for Claude Code.
 - **Meter:** a quiet estimate of the active context window in the status line.
 - **Wash:** when you ask, Claude writes a short handoff brief, and your next `/clear` starts a fresh session that begins with it.
 
-Nothing happens automatically, and nothing leaves your machine. The one exception: the installer asks npm whether a newer version is out.
+Nothing happens automatically, and nothing leaves your machine. Two exceptions: the installer asks npm whether a newer version is out, and `carwash stats --share` sends anonymous totals if you run it and say yes.
 
 **Status:** pre-release. The meter and the typed `/wash` command work today. Clickable links in the status line and the one-step restart are not built yet. See [plan-3.md](plan-3.md) for the design.
 
@@ -59,6 +59,7 @@ Your old conversation is not deleted. It stays in `/resume`.
 | `/wash detailed` | Adds rationale, history, test results, risks, a step checklist |
 | `/wash discard` | Drop the brief. `/clear` is a normal clear again |
 | `/wash load [id]` | Make a waiting brief the one your next `/clear` uses |
+| `/wash stats` | How much context your washes have saved (see below) |
 | `/wash help` | Explain the meter and these options, with this session's size limits |
 
 Each level has a size limit: the most tokens its brief may take, worked out from what the conversation is using (a hundredth for `light`, three hundredths for `mid`, a tenth for `detailed`). `/wash help` shows the limits for the session you are in.
@@ -74,9 +75,40 @@ Things worth knowing:
 - **Closed the terminal before clearing?** Start `claude` in the same folder. If exactly one brief is waiting for that folder, it is under 12 hours old, and the session that wrote it has ended, it is loaded. If there is any doubt about which brief is meant, nothing is loaded and you are shown what is waiting, with the `/wash load <id>` to use.
 - **Briefs expire after 48 hours.** A delivered brief is kept for 24 hours in case you want it again (`/wash load <id>`), then deleted.
 
+## Stats
+
+```sh
+npx context-carwash stats
+```
+
+```text
+Carwash stats, since 3 Oct 2026 (12 days)
+
+  Briefs written              7  (light 1 · mid 5 · detailed 1)
+  Started fresh with one      6
+  Prompts in fresh sessions   94  (410 requests to Claude)
+  Context not re-sent         ~21M tokens
+  Spent writing briefs        ~0.9M tokens
+  Net saved                   ~20M tokens
+```
+
+`/wash stats` shows the same inside Claude Code, at no cost.
+
+How it is worked out: every request to Claude carries the whole conversation, and a single prompt can make many requests while Claude uses tools. After a wash, each request in the fresh session starts from the brief instead of the old conversation. Claude Code's transcript of that session records the size of every request, so Carwash counts the requests and multiplies by the gap. Nothing is assumed about how long you would have kept going: only requests you actually made count. Counting stops where the old session would have compacted on its own.
+
+Claude caches repeated context and charges about a tenth for it, so in money terms the saving is roughly a tenth of these numbers. The brief cost counts every brief written, used or not.
+
+### Sharing your stats
+
+```sh
+npx context-carwash stats --share
+```
+
+This shows every field it would send, and sends only if you say yes. It sends totals to a Google Form: a random share id made for sharing only (so sharing again replaces your last share), the Carwash version, your operating system, days since your first brief, and the numbers above. No names, folders, projects, prompts or briefs. You are not signed in to send it.
+
 ## Where things are kept
 
-Briefs are stored in `~/.carwash`, readable only by you, and never inside your project. Nothing is uploaded, and there is no telemetry. The installer reads the newest version number from npm, and nothing else goes online; set `CARWASH_NO_UPDATE_CHECK=1` to skip even that.
+Briefs are stored in `~/.carwash`, readable only by you, and never inside your project. So is the stats ledger (`~/.carwash/stats`): one small file per brief with its size, its level, and which fresh sessions it went to, but never the brief or your prompts. Nothing is uploaded in the background, and there is no telemetry. The installer reads the newest version number from npm (set `CARWASH_NO_UPDATE_CHECK=1` to skip that), and `stats --share` sends only when you run it and say yes.
 
 If a hook fails it stays silent and writes the error to `~/.carwash/errors.log`.
 
@@ -86,7 +118,7 @@ If a hook fails it stays silent and writes the error to `~/.carwash/errors.log`.
 npx context-carwash uninstall
 ```
 
-This puts `settings.json` back exactly as it was. If you have edited the file since installing, it removes only Carwash's own status line and hooks and keeps your edits. It then removes the `/wash` command and deletes `~/.carwash`, including any briefs still waiting.
+This puts `settings.json` back exactly as it was. If you have edited the file since installing, it removes only Carwash's own status line and hooks and keeps your edits. It then removes the `/wash` command and deletes `~/.carwash`, including any briefs still waiting and your stats.
 
 ## Limitations
 

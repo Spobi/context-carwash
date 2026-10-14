@@ -1,6 +1,8 @@
 import { existsSync, writeFileSync } from 'node:fs';
 import { DEFAULT_LEVEL, capFor, estimateTokens, isLevel } from '../levels.mjs';
 import { installRecordPath, welcomedPath } from '../paths.mjs';
+import { recordDelivery, recordWash, refreshLedger, totals } from '../stats/ledger.mjs';
+import { statsReport } from '../stats/report.mjs';
 import { budgetNote, composeContext, describe, helpMessage, loadedMessage, parseReply, pointerMessage, readyMessage, retryNote, stalenessLine, welcomeMessage } from './brief.mjs';
 import { repoState, worktreeRoot } from './git.mjs';
 import { currentProcess, isRunning, sameProcess } from './process.mjs';
@@ -10,7 +12,7 @@ import { AUTO_LOAD_MS, addRecord, claim, findRecords, purge, readyRecords, remov
 // Carwash's three Claude Code hooks:
 //
 //   UserPromptExpansion  /wash was typed. A level starts a wash and tells
-//                        Claude the size limit; discard, load and help are
+//                        Claude the size limit; discard, load, stats and help are
 //                        handled here and never reach Claude.
 //   Stop                 Claude finished replying. If that reply is the brief,
 //                        save it.
@@ -20,7 +22,7 @@ import { AUTO_LOAD_MS, addRecord, claim, findRecords, purge, readyRecords, remov
 // Each handler returns the JSON to print for Claude Code, or null to stay out
 // of the way. None of them ever clears, restarts, or runs anything.
 
-const USAGE = 'Usage: /wash [light | mid | detailed], /wash discard [id], /wash load [id], /wash help';
+const USAGE = 'Usage: /wash [light | mid | detailed], /wash discard [id], /wash load [id], /wash stats, /wash help';
 
 // How many times to ask for a shorter brief before keeping an oversized one.
 const MAX_REWRITES = 2;
@@ -33,6 +35,15 @@ const block = (reason) => ({ decision: 'block', reason: `Carwash: ${reason}` });
 // conversation, so it must not use up a brief meant for a person.
 const unattended = (env) => env.CLAUDE_CODE_SESSION_ATTENDED === '0' || /^sdk/.test(env.CLAUDE_CODE_ENTRYPOINT ?? '');
 
+// The savings ledger is bookkeeping: if it fails, the brief still has to work.
+function quietly(ctx, fn) {
+  try {
+    fn();
+  } catch (error) {
+    ctx.onError?.(error);
+  }
+}
+
 const cwdOf = (payload) => (typeof payload.cwd === 'string' && payload.cwd ? payload.cwd : process.cwd());
 
 // --- /wash ---------------------------------------------------------------
@@ -43,14 +54,16 @@ function onExpansion(payload, ctx) {
   if (isLevel(verb)) return begin(payload, verb, ctx);
   if (verb === 'discard') return block(discard(payload, ref, ctx));
   if (verb === 'load') return block(load(payload, ref, ctx));
+  if (verb === 'stats') return block(statsReport(totals(refreshLedger(ctx.env, { now: ctx.now, force: true }), ctx.now), { inClaude: true }));
   if (verb === 'help') return block(helpMessage(loadUsage(ctx.env, payload.session_id)?.used ?? null));
   return block(`/wash does not know "${verb}". ${USAGE}`);
 }
 
 function begin(payload, level, { env, now }) {
-  const used = loadUsage(env, payload.session_id)?.used ?? null;
+  const usage = loadUsage(env, payload.session_id);
+  const used = usage?.used ?? null;
   const cap = capFor(level, used);
-  startWash(env, payload.session_id, { promptId: payload.prompt_id ?? null, level, cap, used, startedAt: now, rewrites: 0 });
+  startWash(env, payload.session_id, { promptId: payload.prompt_id ?? null, level, cap, used, size: usage?.size ?? null, startedAt: now, rewrites: 0 });
   return { hookSpecificOutput: { hookEventName: 'UserPromptExpansion', additionalContext: budgetNote(level, cap, used) } };
 }
 
@@ -157,6 +170,7 @@ function onStop(payload, ctx) {
     },
     now,
   );
+  quietly(ctx, () => recordWash(env, record, wash));
   // One ready brief per terminal. An earlier wash of this same session is out
   // of date and goes; anything else this terminal held goes back to waiting.
   for (const other of readyRecords(env, now)) {
@@ -170,9 +184,11 @@ function onStop(payload, ctx) {
 
 // --- SessionStart --------------------------------------------------------
 
-function deliver(record, payload, { env, now }) {
+function deliver(record, payload, ctx) {
+  const { env, now } = ctx;
   // Another session may have taken it between the listing and now.
   if (!claim(env, record, payload.session_id, now)) return null;
+  quietly(ctx, () => recordDelivery(env, record, payload, now));
   const stale = stalenessLine(record.source, repoState(cwdOf(payload)));
   return {
     systemMessage: loadedMessage(record, now, stale),
@@ -207,6 +223,7 @@ function onSessionStart(payload, ctx) {
 function briefAtStart(payload, ctx) {
   const { env, now, me } = ctx;
   purge(env, now);
+  quietly(ctx, () => refreshLedger(env, { now }));
   const ready = readyRecords(env, now);
 
   // Relaunched by Carwash's shell function for one particular brief.
@@ -248,7 +265,7 @@ function briefAtStart(payload, ctx) {
 // --- entry point -----------------------------------------------------------
 
 // Handle one hook call. `input` is the JSON Claude Code sends on stdin.
-export function runHook({ input, env = process.env, platform = process.platform, now = Date.now(), me, running } = {}) {
+export function runHook({ input, env = process.env, platform = process.platform, now = Date.now(), me, running, onError } = {}) {
   let payload;
   try {
     payload = JSON.parse(input);
@@ -261,6 +278,7 @@ export function runHook({ input, env = process.env, platform = process.platform,
     now,
     me: me ?? currentProcess(env, platform),
     isRunning: running ?? ((owner) => isRunning(owner, platform)),
+    onError,
   };
   switch (payload.hook_event_name) {
     case 'UserPromptExpansion':

@@ -4,6 +4,8 @@ import { applyInstall, applyUninstall, describeInstall, describeUninstall, packa
 import { UserError } from './install/settings.mjs';
 import { isNewer, latestVersion, runRelease } from './install/update.mjs';
 import { errorLogPath, welcomedPath } from './paths.mjs';
+import { refreshLedger, totals } from './stats/ledger.mjs';
+import { FORM, describeShare, sendShare, shareId, sharePayload, shareReady, statsReport } from './stats/report.mjs';
 import { render } from './statusline/render.mjs';
 import { statusline } from './statusline/run.mjs';
 import { runHook } from './wash/hooks.mjs';
@@ -15,6 +17,7 @@ Usage: carwash <command>
   install [--yes]     Add the context meter and the /wash command to Claude Code
   uninstall [--yes]   Undo everything install did
   preview             Print sample meters in this terminal
+  stats [--share]     Show how much context /wash has saved; --share sends the totals anonymously, after asking
   --version           Print the version
 
 Inside Claude Code, once installed:
@@ -23,9 +26,11 @@ Inside Claude Code, once installed:
   /clear                           Start fresh with the brief that is ready
   /wash discard                    Drop the brief; /clear is a normal clear again
   /wash load [id]                  Make a waiting brief the one /clear will use
+  /wash stats                      The same totals as carwash stats
   /wash help                       Explain the meter and the options
 
-Nothing happens automatically. Only install goes online, to ask npm for the newest version.`;
+Nothing happens automatically. Only two things go online: install, to ask npm
+for the newest version, and stats --share, once you have said yes.`;
 
 async function readAll(stream) {
   if (stream.isTTY) return '';
@@ -88,7 +93,7 @@ function logError(env, error) {
   }
 }
 
-export async function main(argv, { env = process.env, stdin = process.stdin, stdout = process.stdout, stderr = process.stderr, latest = latestVersion, handOff = runRelease } = {}) {
+export async function main(argv, { env = process.env, stdin = process.stdin, stdout = process.stdout, stderr = process.stderr, latest = latestVersion, handOff = runRelease, form = FORM, share = sendShare } = {}) {
   const [command, ...rest] = argv;
   const yes = rest.includes('--yes') || rest.includes('-y');
   try {
@@ -99,7 +104,7 @@ export async function main(argv, { env = process.env, stdin = process.stdin, std
       case 'hook': {
         let output = null;
         try {
-          output = runHook({ input: await readAll(stdin), env });
+          output = runHook({ input: await readAll(stdin), env, onError: (error) => logError(env, error) });
         } catch (error) {
           logError(env, error);
         }
@@ -140,6 +145,32 @@ export async function main(argv, { env = process.env, stdin = process.stdin, std
         }
         applyUninstall(plan);
         stdout.write('Uninstalled.\n');
+        return 0;
+      }
+      case 'stats': {
+        const sum = totals(refreshLedger(env, { force: true }));
+        stdout.write(statsReport(sum) + '\n');
+        if (!rest.includes('--share')) return 0;
+        stdout.write('\n');
+        if (!shareReady(form)) {
+          stdout.write('Sharing is not switched on in this version yet. Nothing was sent.\n');
+          return 1;
+        }
+        if (!sum.washes) {
+          stdout.write('There is nothing to share yet. Nothing was sent.\n');
+          return 1;
+        }
+        const payload = sharePayload(sum, { shareId: shareId(env), version: packageVersion() });
+        stdout.write(describeShare(payload) + '\n\n');
+        if (!(await confirm('Send it?', { yes, stdin, stdout }))) {
+          stdout.write('Nothing was sent.\n');
+          return 1;
+        }
+        if (!(await share(payload, { form }))) {
+          stdout.write('Could not reach the form, so nothing was sent. Try again later.\n');
+          return 1;
+        }
+        stdout.write('Sent. Thank you.\n');
         return 0;
       }
       case 'preview':
