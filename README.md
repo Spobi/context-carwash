@@ -14,11 +14,11 @@ Nothing happens automatically, and nothing leaves your machine.
 Requires Node 18 or later.
 
 ```sh
-git clone https://github.com/Spobi/context-carwash.git
-cd context-carwash
-node bin/carwash.mjs preview     # sample meters in your terminal, nothing installed
-node bin/carwash.mjs install     # lists what it will change, then asks
+npx context-carwash preview     # sample meters in your terminal, nothing installed
+npx context-carwash install     # lists what it will change, then asks
 ```
+
+To update later, run `npx context-carwash@latest install` again. Waiting briefs are kept.
 
 The installer copies itself to `~/.carwash/app` and makes three changes to Claude Code, all listed before you confirm:
 
@@ -83,7 +83,7 @@ If a hook fails it stays silent and writes the error to `~/.carwash/errors.log`.
 ## Uninstall
 
 ```sh
-node ~/.carwash/app/bin/carwash.mjs uninstall
+npx context-carwash uninstall
 ```
 
 This puts `settings.json` back exactly as it was. If you have edited the file since installing, it removes only Carwash's own status line and hooks and keeps your edits. It then removes the `/wash` command and deletes `~/.carwash`, including any briefs still waiting.
