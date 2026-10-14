@@ -401,7 +401,7 @@ test('command line: install asks first, and the installed status line runs', () 
     ? spawnSync('/bin/sh', ['-c', command], { encoding: 'utf8', input: payload, env: { ...env, NO_COLOR: '1', TERM_PROGRAM: 'xterm' } })
     : spawnSync(process.execPath, [join(home, 'app', 'bin', 'carwash.mjs'), 'statusline'], { encoding: 'utf8', input: payload, env: { ...env, NO_COLOR: '1', TERM_PROGRAM: 'xterm' } });
   assert.equal(shown.status, 0, shown.stderr);
-  assert.equal(shown.stdout, 'ctx ~136k/200k  [██████████░░░░░]  Type /wash light ≤1.4k | mid ≤4.1k | detailed ≤13.6k\n');
+  assert.equal(shown.stdout, 'context ~136k/200k  [██████████░░░░░]  /wash to compress & save context, then /clear\n');
 
   result = run('uninstall', '--yes');
   assert.equal(result.status, 0, result.stderr);

@@ -1,9 +1,21 @@
 import { LEVELS } from '../levels.mjs';
 import { colorAt, colorDepth, paint } from './color.mjs';
-import { availableColumns, clickModifier, isAppleTerminal, supportsLinks, visibleWidth } from './terminal.mjs';
+import { availableColumns, clickModifier, supportsLinks, visibleWidth } from './terminal.mjs';
 
 const BAR_CELLS = 15;
 const GAP = '  ';
+
+// From this share of the window on, the meter puts the colour into words.
+// Like the colour, it is display only: nothing is triggered by it.
+const FULL_AT = 75;
+const FULL = 'getting full';
+
+// What /wash does, said plainly. The levels and their caps are left to the
+// command menu and /wash help, which show them when someone is choosing. The
+// middle form keeps the meaning in an 80-column window, the Terminal.app default.
+const HINT_LONG = '/wash to compress & save context, then /clear';
+const HINT_MID = '/wash to compress, then /clear';
+const HINT_SHORT = '/wash, then /clear';
 
 const finite = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
 
@@ -58,11 +70,6 @@ function bar(pct, depth, style) {
   return `[${cells}${'░'.repeat(BAR_CELLS - filled)}]`;
 }
 
-function typedHint(caps, apple) {
-  const names = LEVELS.map((l) => (caps ? `${l.name} ≤${caps[l.name]}` : l.name)).join(' | ');
-  return `${apple ? "Terminal.app can't click links. " : ''}Type /wash ${names}`;
-}
-
 function linkedAction(caps, links, modifier) {
   const link = (url, text) => `\x1b]8;;${url}\x07${text}\x1b]8;;\x07`;
   const names = LEVELS.map((l) => link(links[l.name], l.name) + (caps ? ` ≤${caps[l.name]}` : '')).join(' · ');
@@ -79,8 +86,9 @@ function linkedAction(caps, links, modifier) {
 //                   { ready: { level, tokens } } once one is waiting for /clear
 //
 // Returns { text, hasBar }: the richest candidate that fits. Narrow widths lose
-// the brief caps first, then the window size, then the Terminal.app sentence,
-// then the bar, and finally everything but the tokens in use.
+// the window size first, then the invitation shortens in two steps (the first
+// gives the window size its room back), then the bar goes, and finally
+// everything but the tokens in use and, once it applies, "getting full".
 export function render(payload, options = {}) {
   const env = options.env ?? process.env;
   const columns = options.columns ?? availableColumns(env);
@@ -89,10 +97,13 @@ export function render(payload, options = {}) {
 
   // The reading is given in tokens, never as a percentage: a count is
   // something people can picture, and the bar already shows the proportion.
-  const usedSeg = `ctx ${used ? `~${formatTokens(used)}` : '--'}`;
+  const usedSeg = `context ${used ? `~${formatTokens(used)}` : '--'}`;
   const countSeg = used && size ? `${usedSeg}/${formatTokens(size)}` : usedSeg;
   const barSeg = bar(pct, depth, options.barStyle ?? 'ramp');
   const caps = capLabels(used);
+  // Only while inviting a wash: once one is under way there is nothing to add.
+  const full = !options.state?.ready && !options.state?.washing && pct !== null && pct >= FULL_AT;
+  const say = (invitation) => (full ? `${FULL} · ${invitation}` : invitation);
 
   let candidates;
   if (options.state?.ready) {
@@ -116,23 +127,23 @@ export function render(payload, options = {}) {
   } else if (options.links && supportsLinks(env)) {
     const modifier = clickModifier(options.platform);
     candidates = [
-      [countSeg, barSeg, linkedAction(caps, options.links, modifier)],
-      [countSeg, barSeg, linkedAction(null, options.links, modifier)],
-      [usedSeg, barSeg, linkedAction(null, options.links, modifier)],
-      [usedSeg, linkedAction(null, options.links, modifier)],
+      [countSeg, barSeg, say(linkedAction(caps, options.links, modifier))],
+      [countSeg, barSeg, say(linkedAction(null, options.links, modifier))],
+      [usedSeg, barSeg, say(linkedAction(null, options.links, modifier))],
+      [usedSeg, say(linkedAction(null, options.links, modifier))],
     ];
   } else {
-    const apple = isAppleTerminal(env);
     candidates = [
-      [countSeg, barSeg, typedHint(caps, apple)],
-      [countSeg, barSeg, typedHint(null, apple)],
-      [usedSeg, barSeg, typedHint(null, apple)],
-      // Once the Terminal.app sentence cannot fit, the window size gets its room back.
-      [countSeg, barSeg, typedHint(null, false)],
-      [usedSeg, barSeg, typedHint(null, false)],
-      [usedSeg, typedHint(null, false)],
+      [countSeg, barSeg, say(HINT_LONG)],
+      [usedSeg, barSeg, say(HINT_LONG)],
+      // Once the long form cannot fit, the window size gets its room back.
+      [countSeg, barSeg, say(HINT_MID)],
+      [usedSeg, barSeg, say(HINT_MID)],
+      [usedSeg, barSeg, say(HINT_SHORT)],
+      [usedSeg, say(HINT_SHORT)],
     ];
   }
+  if (full) candidates.push([countSeg, FULL], [usedSeg, FULL]);
   candidates.push([countSeg], [usedSeg]);
 
   for (const segments of candidates) {

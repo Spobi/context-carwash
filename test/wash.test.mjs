@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, statSync, utimesSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
@@ -242,7 +242,10 @@ test('/wash then /clear: the fresh session starts with the brief, once', () => {
   const [record] = ready();
 
   const result = start('clear', { now: NOW + 2 * 60_000 });
-  assert.equal(result.systemMessage, "Loaded your Carwash brief (light ~61, 2m ago). That size is the brief alone; the meter also counts Claude Code's own baseline.");
+  assert.equal(
+    result.systemMessage,
+    "Loaded your Carwash brief (light ~61, 2m ago), down from ~100k in the old session. That size is the brief alone; the meter also counts Claude Code's own baseline.",
+  );
   assert.equal(result.hookSpecificOutput.hookEventName, 'SessionStart');
   const context = result.hookSpecificOutput.additionalContext;
   assert.ok(context.startsWith('# Carwash handoff\n'));
@@ -289,7 +292,7 @@ test('a new terminal picks up the one brief left for its folder', () => {
   assert.equal(ready().length, 1);
 
   const result = start('startup', { me: C, now: NOW + 3 * HOUR });
-  assert.match(result.systemMessage, /^Loaded your Carwash brief \(mid ~61, 3h ago\)\./);
+  assert.match(result.systemMessage, /^Loaded your Carwash brief \(mid ~61, 3h ago\), down from ~100k in the old session\./);
   assert.ok(result.hookSpecificOutput.additionalContext.endsWith(BRIEF));
   assert.equal(ready().length, 0);
 });
@@ -460,8 +463,78 @@ test('/wash load makes a waiting brief the one /clear will use', () => {
 
 test('unknown /wash arguments explain themselves instead of reaching Claude', () => {
   const { env, slash } = sandbox();
-  assert.deepEqual(slash('bogus'), { decision: 'block', reason: 'Carwash: /wash does not know "bogus". Usage: /wash [light | mid | detailed], /wash discard [id], /wash load [id]' });
+  assert.deepEqual(slash('bogus'), { decision: 'block', reason: 'Carwash: /wash does not know "bogus". Usage: /wash [light | mid | detailed], /wash discard [id], /wash load [id], /wash help' });
   assert.equal(currentWash(env, 'S1', NOW), null);
+});
+
+test('/wash help explains the meter and the options without reaching Claude', () => {
+  const { env, slash, wash, ready } = sandbox();
+  saveUsage(env, 'S1', { used: 136_000, size: 200_000 });
+  const help = slash('help');
+  assert.equal(help.decision, 'block');
+  assert.equal(
+    help.reason,
+    [
+      'Carwash: /wash compresses this conversation into a short brief. Your next /clear then starts a fresh session that begins with it, and the old session stays in /resume.',
+      '',
+      '  /wash light           goal, where things stand, next step, up to 1.4k tokens',
+      '  /wash mid             adds decisions, constraints, pitfalls (the default), up to 4.1k tokens',
+      '  /wash detailed        adds reasoning, history, test results, a checklist, up to 13.6k tokens',
+      '  /wash discard         drop the brief; /clear is a normal clear again',
+      '  /wash load [id]       make a waiting brief the one /clear uses',
+      '',
+      'The status line shows how many tokens this conversation is using, out of what the model can hold.',
+      'Writing a brief is an ordinary Claude reply, so it uses tokens. help, discard and load do not.',
+    ].join('\n'),
+  );
+  // Before the first reply there is no reading, so no sizes are claimed.
+  assert.doesNotMatch(slash('HELP', { session: 'S9' }).reason, /up to/);
+
+  // It leaves a wash in progress, and a ready brief, alone.
+  slash('mid');
+  slash('help');
+  assert.equal(currentWash(env, 'S1', NOW).level, 'mid');
+  wash('light');
+  slash('help');
+  assert.equal(ready().length, 1);
+});
+
+test('the first session after install is welcomed, once', () => {
+  const { env, start, wash, ready } = sandbox();
+  // No install record: nobody to welcome (and every other test runs this way).
+  assert.equal(start('startup'), null);
+
+  mkdirSync(env.CARWASH_HOME, { recursive: true });
+  writeFileSync(join(env.CARWASH_HOME, 'install.json'), '{}');
+  // A run nobody is watching does not use it up.
+  assert.equal(start('startup', { extraEnv: { CLAUDE_CODE_SESSION_ATTENDED: '0' } }), null);
+  // Nor does a resumed conversation.
+  assert.equal(start('resume'), null);
+
+  const first = start('startup');
+  assert.match(first.systemMessage, /^Context Carwash is installed\. This note is shown once\.\n/);
+  assert.match(first.systemMessage, /\/wash to compress & save context into a short brief, then \/clear/);
+  assert.equal(first.hookSpecificOutput, undefined);
+  assert.equal(start('startup', { session: 'S3' }), null);
+  assert.equal(start('clear', { session: 'S4' }), null);
+
+  // A brief to deliver comes first, and the welcome waits for a quiet start.
+  rmSync(join(env.CARWASH_HOME, 'welcomed'));
+  wash('light');
+  assert.match(start('clear').systemMessage, /^Loaded your Carwash brief/);
+  assert.equal(ready().length, 0);
+  assert.match(start('clear', { session: 'S5' }).systemMessage, /^Context Carwash is installed/);
+});
+
+test('the loaded message leaves out the old size when it was never known', () => {
+  const { env, slash, stop, start } = sandbox();
+  slash('light');
+  stop(BRIEF);
+  assert.equal(
+    start('clear', { now: NOW + 60_000 }).systemMessage,
+    "Loaded your Carwash brief (light ~61, 1m ago). That size is the brief alone; the meter also counts Claude Code's own baseline.",
+  );
+  assert.equal(loadUsage(env, 'S1'), null);
 });
 
 test('the fresh session is told when the repository has moved', { skip: !hasGit }, () => {
@@ -601,29 +674,31 @@ test('the status line says when a brief is being written and when one is ready',
   // End to end, under the pid Claude Code reports.
   wash('light', { me: { pid: 424_242, start: null }, prompt: 'P2' });
   const line = await statusline({ input: JSON.stringify(payload), env: { ...env, CLAUDE_PID: '424242', TERM_PROGRAM: 'xterm', NO_COLOR: '1' } });
-  assert.equal(line, 'ctx ~136k/200k  [██████████░░░░░]  Brief ready ✓ light ~61 · type /clear to start fresh with it. Old session stays in /resume.');
+  assert.equal(line, 'context ~136k/200k  [██████████░░░░░]  Brief ready ✓ light ~61 · type /clear to start fresh with it. Old session stays in /resume.');
 });
 
 test('wash states fit any width, losing detail before overflowing', () => {
   const payload = { context_window: { context_window_size: 200_000, used_percentage: 68 } };
   const env = { TERM_PROGRAM: 'Apple_Terminal', NO_COLOR: '1' };
   const ready = (columns) => render(payload, { env, columns, state: { ready: { level: 'mid', tokens: 3100 } } }).text;
-  assert.equal(ready(Infinity), 'ctx ~136k/200k  [██████████░░░░░]  Brief ready ✓ mid ~3.1k · type /clear to start fresh with it. Old session stays in /resume.');
-  assert.equal(ready(116), 'ctx ~136k/200k  [██████████░░░░░]  Brief ready ✓ mid ~3.1k · type /clear to start fresh with it');
-  assert.equal(ready(90), 'ctx ~136k  [██████████░░░░░]  Brief ready ✓ mid ~3.1k · type /clear to start fresh with it');
-  assert.equal(ready(60), 'ctx ~136k  [██████████░░░░░]  Brief ready ✓ · type /clear');
-  assert.equal(ready(40), 'ctx ~136k  Brief ready ✓ · type /clear');
-  assert.equal(ready(30), 'ctx ~136k  Brief ready ✓');
-  assert.equal(ready(20), 'ctx ~136k/200k');
-  assert.equal(ready(10), 'ctx ~136k');
+  assert.equal(ready(Infinity), 'context ~136k/200k  [██████████░░░░░]  Brief ready ✓ mid ~3.1k · type /clear to start fresh with it. Old session stays in /resume.');
+  assert.equal(ready(116), 'context ~136k/200k  [██████████░░░░░]  Brief ready ✓ mid ~3.1k · type /clear to start fresh with it');
+  assert.equal(ready(94), 'context ~136k  [██████████░░░░░]  Brief ready ✓ mid ~3.1k · type /clear to start fresh with it');
+  assert.equal(ready(61), 'context ~136k  [██████████░░░░░]  Brief ready ✓ · type /clear');
+  assert.equal(ready(42), 'context ~136k  Brief ready ✓ · type /clear');
+  assert.equal(ready(30), 'context ~136k  Brief ready ✓');
+  assert.equal(ready(20), 'context ~136k/200k');
+  assert.equal(ready(17), 'context ~136k');
 
   const washing = (columns) => render(payload, { env, columns, state: { washing: 'mid' } }).text;
-  assert.equal(washing(Infinity), 'ctx ~136k/200k  [██████████░░░░░]  washing…');
-  assert.equal(washing(40), 'ctx ~136k  [██████████░░░░░]  washing…');
-  assert.equal(washing(20), 'ctx ~136k  washing…');
-  assert.equal(washing(10), 'ctx ~136k');
+  assert.equal(washing(Infinity), 'context ~136k/200k  [██████████░░░░░]  washing…');
+  assert.equal(washing(46), 'context ~136k  [██████████░░░░░]  washing…');
+  assert.equal(washing(41), 'context ~136k  washing…');
+  assert.equal(washing(22), 'context ~136k/200k');
+  assert.equal(washing(17), 'context ~136k');
 
-  for (let columns = 9; columns <= 140; columns++) {
+  // The shortest reading, "context ~136k", is 13 columns: below that nothing can fit.
+  for (let columns = 13; columns <= 140; columns++) {
     assert.ok(visibleWidth(ready(columns)) <= columns, `ready overflows at ${columns}`);
     assert.ok(visibleWidth(washing(columns)) <= columns, `washing overflows at ${columns}`);
   }

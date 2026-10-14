@@ -245,6 +245,19 @@ Decided by the user after testing M3: a percentage is nebulous and people do not
 - No percentage appears anywhere in the status line. The bar and its colour still follow the proportion.
 - Narrow terminals lose the brief caps first, then the window size (`ctx ~136k`), then the Terminal.app sentence (which gives the window size its room back), then the bar, then everything but the count.
 
+### A self-explanatory meter (2026-10-14)
+
+Decided by the user after reviewing what a newcomer could not work out from the row: it said what to type, but not what `/wash` does, that `/clear` is the second step, or what the numbers meant. This replaces the wording and narrow-terminal order in the section above.
+
+- The reading is `context ~136k/200k`, not `ctx`: the full word costs four columns.
+- The invitation is `/wash to compress & save context, then /clear`. In order of narrowing, it shortens to `/wash to compress, then /clear` (which keeps an 80-column window, the Terminal.app default, meaningful) and then `/wash, then /clear`. The levels and their caps leave the row: the command menu's argument hint lists the levels, and `/wash help` gives the caps. The dormant click-link form keeps its caps.
+- The Terminal.app sentence is gone. Links are not built yet, so it apologised for a feature no terminal has.
+- From 75% of the window on, the meter adds `getting full ·` before the invitation. It is display only, like the colour, and it is not shown while a wash is under way or a brief is ready. It outlasts the invitation and the bar at narrow widths.
+- Narrow terminals lose the window size first, then the long invitation (which gives the window size its room back), then the middle one, then the bar, then everything but the count (and `getting full`, when it applies).
+- **`/wash help`** is answered by the `UserPromptExpansion` hook like `discard` and `load`, so it costs nothing. It explains `/wash` and `/clear`, each level with its cap for the current session, and the meter.
+- **First-run welcome:** the first attended `startup` or `clear` after install that has nothing else to say prints a short note through `SessionStart`'s `systemMessage`, then never again. A `~/.carwash/welcomed` marker, created exclusively, records it, so two sessions starting together cannot both show it. Uninstall deletes the marker with `~/.carwash`, so a reinstall shows it again. Checked live on Claude Code 2.1.299: line breaks in a `systemMessage` and in a block reason render as separate lines.
+- **Loaded message:** when the old session's size was known, it adds `down from ~136k in the old session`. That number is the reading the brief was sized from. The new session's own size is not known at `SessionStart`, so no "saved" figure is claimed.
+
 ## 15. References
 
 - Status line: https://code.claude.com/docs/en/statusline

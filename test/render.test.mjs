@@ -93,17 +93,16 @@ test('readUsage tolerates every missing or null field', () => {
   assert.equal(readUsage({ context_window: { used_percentage: '68' } }).pct, null);
 });
 
-test('the reading is tokens in use out of the window size, then the bar and the caps', () => {
-  assert.equal(
-    render(payload(68), { env: plain, columns: Infinity }).text,
-    'ctx ~136k/200k  [██████████░░░░░]  Type /wash light ≤1.4k | mid ≤4.1k | detailed ≤13.6k',
-  );
-  assert.equal(render(payload(10), { env: plain, columns: Infinity }).text, 'ctx ~20k/200k  [██░░░░░░░░░░░░░]  Type /wash light ≤200 | mid ≤600 | detailed ≤2k');
-  assert.equal(render(payload(3.8, 1_000_000), { env: plain, columns: Infinity }).text, 'ctx ~38k/1M  [█░░░░░░░░░░░░░░]  Type /wash light ≤380 | mid ≤1.1k | detailed ≤3.8k');
+const HINT = '/wash to compress & save context, then /clear';
+
+test('the reading is tokens in use out of the window size, then the bar and what /wash does', () => {
+  assert.equal(render(payload(68), { env: plain, columns: Infinity }).text, `context ~136k/200k  [██████████░░░░░]  ${HINT}`);
+  assert.equal(render(payload(10), { env: plain, columns: Infinity }).text, `context ~20k/200k  [██░░░░░░░░░░░░░]  ${HINT}`);
+  assert.equal(render(payload(3.8, 1_000_000), { env: plain, columns: Infinity }).text, `context ~38k/1M  [█░░░░░░░░░░░░░░]  ${HINT}`);
   // Usage known but not the window size: the count stands alone and the bar stays empty.
   assert.equal(
     render({ context_window: { current_usage: { input_tokens: 136_000 } } }, { env: plain, columns: Infinity }).text,
-    'ctx ~136k  [░░░░░░░░░░░░░░░]  Type /wash light ≤1.4k | mid ≤4.1k | detailed ≤13.6k',
+    `context ~136k  [░░░░░░░░░░░░░░░]  ${HINT}`,
   );
 });
 
@@ -121,47 +120,73 @@ test('no percentage is ever shown', () => {
   }
 });
 
-test('Terminal.app gets the permanent typed-command sentence', () => {
-  assert.equal(
-    render(payload(68), { env: apple, columns: Infinity }).text,
-    "ctx ~136k/200k  [██████████░░░░░]  Terminal.app can't click links. Type /wash light ≤1.4k | mid ≤4.1k | detailed ≤13.6k",
-  );
+test('Terminal.app gets the same line as any other terminal while no links are offered', () => {
+  for (const columns of [Infinity, 120, 80, 60]) {
+    assert.equal(render(payload(68), { env: apple, columns }).text, render(payload(68), { env: plain, columns }).text);
+  }
 });
 
-test('unknown reading shows dashes, an empty bar and no estimates', () => {
+test('unknown reading shows dashes and an empty bar', () => {
   for (const input of [null, {}, 'garbage', payload(null)]) {
-    assert.equal(render(input, { env: plain, columns: Infinity }).text, 'ctx --  [░░░░░░░░░░░░░░░]  Type /wash light | mid | detailed');
+    assert.equal(render(input, { env: plain, columns: Infinity }).text, `context --  [░░░░░░░░░░░░░░░]  ${HINT}`);
   }
 });
 
 test('narrow widths drop detail in order and always fit', () => {
   const at = (columns, env = apple) => render(payload(68), { env, columns });
-  assert.equal(at(119).text, "ctx ~136k/200k  [██████████░░░░░]  Terminal.app can't click links. Type /wash light ≤1.4k | mid ≤4.1k | detailed ≤13.6k");
-  // The caps go first.
-  assert.equal(at(118).text, "ctx ~136k/200k  [██████████░░░░░]  Terminal.app can't click links. Type /wash light | mid | detailed");
-  assert.equal(at(100).text, "ctx ~136k/200k  [██████████░░░░░]  Terminal.app can't click links. Type /wash light | mid | detailed");
-  // Then the window size.
-  assert.equal(at(99).text, "ctx ~136k  [██████████░░░░░]  Terminal.app can't click links. Type /wash light | mid | detailed");
-  assert.equal(at(95).text, "ctx ~136k  [██████████░░░░░]  Terminal.app can't click links. Type /wash light | mid | detailed");
-  // Then the Terminal.app sentence, which gives the window size its room back.
-  assert.equal(at(94).text, 'ctx ~136k/200k  [██████████░░░░░]  Type /wash light | mid | detailed');
-  assert.equal(at(68).text, 'ctx ~136k/200k  [██████████░░░░░]  Type /wash light | mid | detailed');
-  assert.equal(at(67).text, 'ctx ~136k  [██████████░░░░░]  Type /wash light | mid | detailed');
-  assert.equal(at(63).text, 'ctx ~136k  [██████████░░░░░]  Type /wash light | mid | detailed');
+  assert.equal(at(84).text, `context ~136k/200k  [██████████░░░░░]  ${HINT}`);
+  // The window size goes first.
+  assert.equal(at(83).text, `context ~136k  [██████████░░░░░]  ${HINT}`);
+  assert.equal(at(79).text, `context ~136k  [██████████░░░░░]  ${HINT}`);
+  // Then the long form, which gives the window size its room back. This is
+  // what an 80-column window shows.
+  assert.equal(at(78).text, 'context ~136k/200k  [██████████░░░░░]  /wash to compress, then /clear');
+  assert.equal(at(76).text, 'context ~136k/200k  [██████████░░░░░]  /wash to compress, then /clear');
+  assert.equal(at(69).text, 'context ~136k/200k  [██████████░░░░░]  /wash to compress, then /clear');
+  assert.equal(at(68).text, 'context ~136k  [██████████░░░░░]  /wash to compress, then /clear');
+  assert.equal(at(64).text, 'context ~136k  [██████████░░░░░]  /wash to compress, then /clear');
+  assert.equal(at(63).text, 'context ~136k  [██████████░░░░░]  /wash, then /clear');
+  assert.equal(at(52).text, 'context ~136k  [██████████░░░░░]  /wash, then /clear');
   // Then the bar, then everything but the count.
-  assert.equal(at(62).text, 'ctx ~136k  Type /wash light | mid | detailed');
-  assert.equal(at(44).text, 'ctx ~136k  Type /wash light | mid | detailed');
-  assert.equal(at(43).text, 'ctx ~136k/200k');
-  assert.equal(at(14).text, 'ctx ~136k/200k');
-  assert.equal(at(13).text, 'ctx ~136k');
-  assert.equal(at(3).text, 'ctx ~136k');
-  assert.equal(at(68).hasBar, true);
-  assert.equal(at(62).hasBar, false);
-  for (let columns = 9; columns <= 130; columns++) {
+  assert.equal(at(51).text, 'context ~136k  /wash, then /clear');
+  assert.equal(at(33).text, 'context ~136k  /wash, then /clear');
+  assert.equal(at(32).text, 'context ~136k/200k');
+  assert.equal(at(18).text, 'context ~136k/200k');
+  assert.equal(at(17).text, 'context ~136k');
+  assert.equal(at(3).text, 'context ~136k');
+  assert.equal(at(52).hasBar, true);
+  assert.equal(at(51).hasBar, false);
+  // The shortest reading, "context ~136k", is 13 columns: below that nothing can fit.
+  for (let columns = 13; columns <= 130; columns++) {
     for (const env of [apple, plain, { TERM_PROGRAM: 'Apple_Terminal', COLORTERM: 'truecolor' }]) {
-      assert.ok(visibleWidth(render(payload(68), { env, columns }).text) <= columns, `overflow at ${columns}`);
+      for (const pct of [68, 80]) {
+        assert.ok(visibleWidth(render(payload(pct), { env, columns }).text) <= columns, `overflow at ${columns} (${pct})`);
+      }
     }
   }
+});
+
+test('from three quarters on, the meter says "getting full"', () => {
+  const line = (pct, options = {}) => render(payload(pct), { env: plain, columns: Infinity, ...options }).text;
+  assert.equal(line(74), `context ~148k/200k  [███████████░░░░]  ${HINT}`);
+  assert.equal(line(75), `context ~150k/200k  [███████████░░░░]  getting full · ${HINT}`);
+  assert.equal(line(100), `context ~200k/200k  [███████████████]  getting full · ${HINT}`);
+  // An unknown reading is never full.
+  assert.doesNotMatch(render({}, { env: plain, columns: Infinity }).text, /getting full/);
+  // Once a wash is under way there is nothing to add.
+  assert.doesNotMatch(line(90, { state: { washing: 'mid' } }), /getting full/);
+  assert.doesNotMatch(line(90, { state: { ready: { level: 'mid', tokens: 3100 } } }), /getting full/);
+  // It says so where clicking is possible too.
+  const links = { light: 'http://127.0.0.1:1/l', mid: 'http://127.0.0.1:1/m', detailed: 'http://127.0.0.1:1/d' };
+  assert.match(strip(line(90, { env: { TERM_PROGRAM: 'iTerm.app', NO_COLOR: '1' }, links, platform: 'darwin' })), /\]  getting full · Compress & New Session/);
+
+  // The word outlasts the invitation and the bar.
+  const at = (columns) => render(payload(75), { env: plain, columns }).text;
+  assert.equal(at(80), 'context ~150k  [███████████░░░░]  getting full · /wash to compress, then /clear');
+  assert.equal(at(48), 'context ~150k  getting full · /wash, then /clear');
+  assert.equal(at(47), 'context ~150k/200k  getting full');
+  assert.equal(at(27), 'context ~150k  getting full');
+  assert.equal(at(26), 'context ~150k/200k');
 });
 
 test('bar fills in proportion and is coloured cell by cell', () => {
@@ -186,7 +211,7 @@ test('links wrap only the level names, and only where the terminal can click', (
   const links = { light: 'http://127.0.0.1:1/l', mid: 'http://127.0.0.1:1/m', detailed: 'http://127.0.0.1:1/d' };
   const iterm = { TERM_PROGRAM: 'iTerm.app', NO_COLOR: '1' };
   const linked = render(payload(68), { env: iterm, columns: Infinity, links, platform: 'darwin' }).text;
-  assert.equal(strip(linked), 'ctx ~136k/200k  [██████████░░░░░]  Compress & New Session (⌘-click): light ≤1.4k · mid ≤4.1k · detailed ≤13.6k');
+  assert.equal(strip(linked), 'context ~136k/200k  [██████████░░░░░]  Compress & New Session (⌘-click): light ≤1.4k · mid ≤4.1k · detailed ≤13.6k');
   assert.deepEqual(
     [...linked.matchAll(/\x1b\]8;;([^\x07]+)\x07([^\x1b]+)\x1b\]8;;\x07/g)].map((m) => [m[1], m[2]]),
     [[links.light, 'light'], [links.mid, 'mid'], [links.detailed, 'detailed']],

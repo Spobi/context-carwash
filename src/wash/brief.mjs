@@ -1,8 +1,9 @@
-import { CHARS_PER_TOKEN } from '../levels.mjs';
+import { CHARS_PER_TOKEN, capFor } from '../levels.mjs';
 import { formatTokens } from '../statusline/render.mjs';
 
 // The wording around a brief: what Claude is told when writing one, how its
-// reply is recognised, and what the user and the next session are shown.
+// reply is recognised, and what the user and the next session are shown. Also
+// the two places Carwash explains itself: the first-run welcome and /wash help.
 
 // Every brief opens with this heading. It is how a reply is known to be a
 // brief, and where anything written before it is cut off.
@@ -97,12 +98,53 @@ export function stalenessLine(source, current) {
   return moved.length ? `Repo changed since this brief: ${moved.join(', ')}.` : null;
 }
 
-// Shown to the user when a fresh session starts with a brief.
+// Shown to the user when a fresh session starts with a brief. The old
+// session's size is the reading /wash was sized from, when there was one.
 export function loadedMessage(record, now, stale) {
+  const before = Number.isFinite(record.used) && record.used > 0 ? `, down from ~${formatTokens(record.used)} in the old session` : '';
   return (
-    `Loaded your Carwash brief (${sizeOf(record)}, ${ageOf(record, now)}).${stale ? ` ${stale}` : ''} ` +
+    `Loaded your Carwash brief (${sizeOf(record)}, ${ageOf(record, now)})${before}.${stale ? ` ${stale}` : ''} ` +
     "That size is the brief alone; the meter also counts Claude Code's own baseline."
   );
+}
+
+// Shown once, at the first session after install.
+export function welcomeMessage() {
+  return [
+    'Context Carwash is installed. This note is shown once.',
+    'The status line shows how many tokens this conversation is using, out of what the model can hold. It changes colour as it fills and says "getting full" from three quarters on.',
+    'To start fresh without losing your place: /wash to compress & save context into a short brief, then /clear. The new session begins with the brief, and the old one stays in /resume.',
+    'Nothing happens unless you ask. /wash help shows the options.',
+  ].join('\n');
+}
+
+// What each level keeps, for /wash help.
+const LEVEL_NOTES = {
+  light: 'goal, where things stand, next step',
+  mid: 'adds decisions, constraints, pitfalls (the default)',
+  detailed: 'adds reasoning, history, test results, a checklist',
+};
+
+// /wash help. `used` is this session's reading, when known, so each level can
+// show the most tokens its brief may take here.
+export function helpMessage(used) {
+  const row = (args, note) => `  /wash ${args.padEnd(16)}${note}`;
+  const level = (name) => {
+    const cap = capFor(name, used);
+    return row(name, `${LEVEL_NOTES[name]}${cap ? `, up to ${formatTokens(cap)} tokens` : ''}`);
+  };
+  return [
+    '/wash compresses this conversation into a short brief. Your next /clear then starts a fresh session that begins with it, and the old session stays in /resume.',
+    '',
+    level('light'),
+    level('mid'),
+    level('detailed'),
+    row('discard', 'drop the brief; /clear is a normal clear again'),
+    row('load [id]', 'make a waiting brief the one /clear uses'),
+    '',
+    'The status line shows how many tokens this conversation is using, out of what the model can hold.',
+    'Writing a brief is an ordinary Claude reply, so it uses tokens. help, discard and load do not.',
+  ].join('\n');
 }
 
 // Shown to the user when briefs are waiting but none was loaded.

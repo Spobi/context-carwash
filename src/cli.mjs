@@ -1,8 +1,8 @@
-import { appendFileSync, statSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, statSync, writeFileSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { applyInstall, applyUninstall, describeInstall, describeUninstall, packageVersion, planInstall, planUninstall } from './install/install.mjs';
 import { UserError } from './install/settings.mjs';
-import { errorLogPath } from './paths.mjs';
+import { errorLogPath, welcomedPath } from './paths.mjs';
 import { render } from './statusline/render.mjs';
 import { statusline } from './statusline/run.mjs';
 import { runHook } from './wash/hooks.mjs';
@@ -22,6 +22,7 @@ Inside Claude Code, once installed:
   /clear                           Start fresh with the brief that is ready
   /wash discard                    Drop the brief; /clear is a normal clear again
   /wash load [id]                  Make a waiting brief the one /clear will use
+  /wash help                       Explain the meter and the options
 
 Nothing happens automatically, and nothing leaves this machine.`;
 
@@ -112,7 +113,8 @@ export async function main(argv, { env = process.env, stdin = process.stdin, std
           return 1;
         }
         applyInstall(plan);
-        stdout.write('Installed. Start a new Claude Code session to get the meter and /wash.\n');
+        const welcome = existsSync(welcomedPath(env)) ? '' : ' Its first message explains them.';
+        stdout.write(`Installed. Start a new Claude Code session to get the meter and /wash.${welcome}\n`);
         return 0;
       }
       case 'uninstall': {

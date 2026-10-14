@@ -1,5 +1,7 @@
+import { existsSync, writeFileSync } from 'node:fs';
 import { DEFAULT_LEVEL, capFor, estimateTokens, isLevel } from '../levels.mjs';
-import { budgetNote, composeContext, describe, loadedMessage, parseReply, pointerMessage, readyMessage, retryNote, stalenessLine } from './brief.mjs';
+import { installRecordPath, welcomedPath } from '../paths.mjs';
+import { budgetNote, composeContext, describe, helpMessage, loadedMessage, parseReply, pointerMessage, readyMessage, retryNote, stalenessLine, welcomeMessage } from './brief.mjs';
 import { repoState, worktreeRoot } from './git.mjs';
 import { currentProcess, isRunning, sameProcess } from './process.mjs';
 import { currentWash, endWash, loadUsage, startWash } from './session.mjs';
@@ -8,17 +10,17 @@ import { AUTO_LOAD_MS, addRecord, claim, findRecords, purge, readyRecords, remov
 // Carwash's three Claude Code hooks:
 //
 //   UserPromptExpansion  /wash was typed. A level starts a wash and tells
-//                        Claude the size limit; discard and load are handled
-//                        here and never reach Claude.
+//                        Claude the size limit; discard, load and help are
+//                        handled here and never reach Claude.
 //   Stop                 Claude finished replying. If that reply is the brief,
 //                        save it.
 //   SessionStart         A session began. If a brief is meant for it, hand the
-//                        brief over.
+//                        brief over. The first one after install says hello.
 //
 // Each handler returns the JSON to print for Claude Code, or null to stay out
 // of the way. None of them ever clears, restarts, or runs anything.
 
-const USAGE = 'Usage: /wash [light | mid | detailed], /wash discard [id], /wash load [id]';
+const USAGE = 'Usage: /wash [light | mid | detailed], /wash discard [id], /wash load [id], /wash help';
 
 // How many times to ask for a shorter brief before keeping an oversized one.
 const MAX_REWRITES = 2;
@@ -41,6 +43,7 @@ function onExpansion(payload, ctx) {
   if (isLevel(verb)) return begin(payload, verb, ctx);
   if (verb === 'discard') return block(discard(payload, ref, ctx));
   if (verb === 'load') return block(load(payload, ref, ctx));
+  if (verb === 'help') return block(helpMessage(loadUsage(ctx.env, payload.session_id)?.used ?? null));
   return block(`/wash does not know "${verb}". ${USAGE}`);
 }
 
@@ -177,12 +180,32 @@ function deliver(record, payload, { env, now }) {
   };
 }
 
+// The first session after install says what Carwash is, once. Creating the
+// marker is the claim, so two sessions starting together cannot both say it.
+// Uninstall deletes the marker with the rest of ~/.carwash, so a reinstall
+// says it again. Without an install record there is nobody to welcome.
+function welcome({ env, now }) {
+  if (!existsSync(installRecordPath(env))) return null;
+  try {
+    writeFileSync(welcomedPath(env), `${new Date(now).toISOString()}\n`, { flag: 'wx', mode: 0o600 });
+  } catch {
+    // Already shown, or nowhere to note it: better silent than said every time.
+    return null;
+  }
+  return { systemMessage: welcomeMessage() };
+}
+
 function onSessionStart(payload, ctx) {
-  const { env, now, me } = ctx;
   // Only a brand-new conversation gets a brief; a resumed, compacted or
   // forked one already has its own history.
   if (payload.source !== 'startup' && payload.source !== 'clear') return null;
-  if (unattended(env)) return null;
+  if (unattended(ctx.env)) return null;
+  // The welcome waits for a start that has nothing else to say.
+  return briefAtStart(payload, ctx) ?? welcome(ctx);
+}
+
+function briefAtStart(payload, ctx) {
+  const { env, now, me } = ctx;
   purge(env, now);
   const ready = readyRecords(env, now);
 

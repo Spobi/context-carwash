@@ -28,6 +28,9 @@ export const sessionsDir = (env = process.env) => join(carwashHome(env), 'sessio
 
 export const errorLogPath = (env = process.env) => join(carwashHome(env), 'errors.log');
 
+// Present once the first-run welcome has been shown.
+export const welcomedPath = (env = process.env) => join(carwashHome(env), 'welcomed');
+
 // Where the /wash command is installed.
 export const skillDir = (env = process.env) => join(claudeConfigDir(env), 'skills', 'wash');
 export const legacyCommandPath = (env = process.env) => join(claudeConfigDir(env), 'commands', 'wash.md');
