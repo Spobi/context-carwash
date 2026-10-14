@@ -93,17 +93,17 @@ test('readUsage tolerates every missing or null field', () => {
   assert.equal(readUsage({ context_window: { used_percentage: '68' } }).pct, null);
 });
 
-const HINT = '/wash to compress & save context, then /clear';
+const HINT = '/wash to compress & save context, then /clear keeps compressed context';
 
 test('the reading is the tokens in use, then the bar and what /wash does', () => {
-  assert.equal(render(payload(68), { env: plain, columns: Infinity }).text, `context ~136k  [██████████░░░░░]  ${HINT}`);
-  assert.equal(render(payload(10), { env: plain, columns: Infinity }).text, `context ~20k  [██░░░░░░░░░░░░░]  ${HINT}`);
+  assert.equal(render(payload(68), { env: plain, columns: Infinity }).text, `session context ~136k  [██████████░░░░░]  ${HINT}`);
+  assert.equal(render(payload(10), { env: plain, columns: Infinity }).text, `session context ~20k  [██░░░░░░░░░░░░░]  ${HINT}`);
   // The window size is never spelled out: the bar shows how much of it is used.
-  assert.equal(render(payload(3.8, 1_000_000), { env: plain, columns: Infinity }).text, `context ~38k  [█░░░░░░░░░░░░░░]  ${HINT}`);
+  assert.equal(render(payload(3.8, 1_000_000), { env: plain, columns: Infinity }).text, `session context ~38k  [█░░░░░░░░░░░░░░]  ${HINT}`);
   // Usage known but not the window size: the bar stays empty.
   assert.equal(
     render({ context_window: { current_usage: { input_tokens: 136_000 } } }, { env: plain, columns: Infinity }).text,
-    `context ~136k  [░░░░░░░░░░░░░░░]  ${HINT}`,
+    `session context ~136k  [░░░░░░░░░░░░░░░]  ${HINT}`,
   );
 });
 
@@ -129,29 +129,32 @@ test('Terminal.app gets the same line as any other terminal while no links are o
 
 test('unknown reading shows dashes and an empty bar', () => {
   for (const input of [null, {}, 'garbage', payload(null)]) {
-    assert.equal(render(input, { env: plain, columns: Infinity }).text, `context --  [░░░░░░░░░░░░░░░]  ${HINT}`);
+    assert.equal(render(input, { env: plain, columns: Infinity }).text, `session context --  [░░░░░░░░░░░░░░░]  ${HINT}`);
   }
 });
 
 test('narrow widths drop detail in order and always fit', () => {
   const at = (columns, env = apple) => render(payload(68), { env, columns });
-  assert.equal(at(79).text, `context ~136k  [██████████░░░░░]  ${HINT}`);
-  // The invitation shortens first. The middle form is what an 80-column window shows.
-  assert.equal(at(78).text, 'context ~136k  [██████████░░░░░]  /wash to compress, then /clear');
-  assert.equal(at(76).text, 'context ~136k  [██████████░░░░░]  /wash to compress, then /clear');
-  assert.equal(at(64).text, 'context ~136k  [██████████░░░░░]  /wash to compress, then /clear');
-  assert.equal(at(63).text, 'context ~136k  [██████████░░░░░]  /wash, then /clear');
-  assert.equal(at(52).text, 'context ~136k  [██████████░░░░░]  /wash, then /clear');
+  assert.equal(at(112).text, `session context ~136k  [██████████░░░░░]  ${HINT}`);
+  // The invitation shortens first: the long form fits about half a Mac screen,
+  // and the middle one is what an 80-column window shows.
+  assert.equal(at(111).text, 'session context ~136k  [██████████░░░░░]  /wash to compress & save context, then /clear');
+  assert.equal(at(87).text, 'session context ~136k  [██████████░░░░░]  /wash to compress & save context, then /clear');
+  assert.equal(at(86).text, 'session context ~136k  [██████████░░░░░]  /wash to compress, then /clear');
+  assert.equal(at(76).text, 'session context ~136k  [██████████░░░░░]  /wash to compress, then /clear');
+  assert.equal(at(72).text, 'session context ~136k  [██████████░░░░░]  /wash to compress, then /clear');
+  assert.equal(at(71).text, 'session context ~136k  [██████████░░░░░]  /wash to compress');
+  assert.equal(at(59).text, 'session context ~136k  [██████████░░░░░]  /wash to compress');
   // Then the bar, then everything but the count.
-  assert.equal(at(51).text, 'context ~136k  /wash, then /clear');
-  assert.equal(at(33).text, 'context ~136k  /wash, then /clear');
-  assert.equal(at(32).text, 'context ~136k');
-  assert.equal(at(13).text, 'context ~136k');
-  assert.equal(at(3).text, 'context ~136k');
-  assert.equal(at(52).hasBar, true);
-  assert.equal(at(51).hasBar, false);
-  // The shortest reading, "context ~136k", is 13 columns: below that nothing can fit.
-  for (let columns = 13; columns <= 130; columns++) {
+  assert.equal(at(58).text, 'session context ~136k  /wash to compress');
+  assert.equal(at(40).text, 'session context ~136k  /wash to compress');
+  assert.equal(at(39).text, 'session context ~136k');
+  assert.equal(at(21).text, 'session context ~136k');
+  assert.equal(at(3).text, 'session context ~136k');
+  assert.equal(at(59).hasBar, true);
+  assert.equal(at(58).hasBar, false);
+  // The shortest reading, "session context ~136k", is 21 columns: below that nothing can fit.
+  for (let columns = 21; columns <= 130; columns++) {
     for (const env of [apple, plain, { TERM_PROGRAM: 'Apple_Terminal', COLORTERM: 'truecolor' }]) {
       for (const pct of [68, 80]) {
         assert.ok(visibleWidth(render(payload(pct), { env, columns }).text) <= columns, `overflow at ${columns} (${pct})`);
@@ -162,9 +165,9 @@ test('narrow widths drop detail in order and always fit', () => {
 
 test('from three quarters on, the meter says "getting full"', () => {
   const line = (pct, options = {}) => render(payload(pct), { env: plain, columns: Infinity, ...options }).text;
-  assert.equal(line(74), `context ~148k  [███████████░░░░]  ${HINT}`);
-  assert.equal(line(75), `context ~150k  [███████████░░░░]  getting full · ${HINT}`);
-  assert.equal(line(100), `context ~200k  [███████████████]  getting full · ${HINT}`);
+  assert.equal(line(74), `session context ~148k  [███████████░░░░]  ${HINT}`);
+  assert.equal(line(75), `session context ~150k  [███████████░░░░]  getting full · ${HINT}`);
+  assert.equal(line(100), `session context ~200k  [███████████████]  getting full · ${HINT}`);
   // An unknown reading is never full.
   assert.doesNotMatch(render({}, { env: plain, columns: Infinity }).text, /getting full/);
   // Once a wash is under way there is nothing to add.
@@ -176,11 +179,11 @@ test('from three quarters on, the meter says "getting full"', () => {
 
   // The word outlasts the invitation and the bar.
   const at = (columns) => render(payload(75), { env: plain, columns }).text;
-  assert.equal(at(80), 'context ~150k  [███████████░░░░]  getting full · /wash to compress, then /clear');
-  assert.equal(at(48), 'context ~150k  getting full · /wash, then /clear');
-  assert.equal(at(47), 'context ~150k  getting full');
-  assert.equal(at(27), 'context ~150k  getting full');
-  assert.equal(at(26), 'context ~150k');
+  assert.equal(at(80), 'session context ~150k  [███████████░░░░]  getting full · /wash to compress');
+  assert.equal(at(55), 'session context ~150k  getting full · /wash to compress');
+  assert.equal(at(54), 'session context ~150k  getting full');
+  assert.equal(at(35), 'session context ~150k  getting full');
+  assert.equal(at(34), 'session context ~150k');
 });
 
 test('bar fills in proportion and is coloured cell by cell', () => {
@@ -205,7 +208,7 @@ test('links wrap only the level names, and only where the terminal can click', (
   const links = { light: 'http://127.0.0.1:1/l', mid: 'http://127.0.0.1:1/m', detailed: 'http://127.0.0.1:1/d' };
   const iterm = { TERM_PROGRAM: 'iTerm.app', NO_COLOR: '1' };
   const linked = render(payload(68), { env: iterm, columns: Infinity, links, platform: 'darwin' }).text;
-  assert.equal(strip(linked), 'context ~136k  [██████████░░░░░]  Compress & New Session (⌘-click): light ≤1.4k · mid ≤4.1k · detailed ≤13.6k');
+  assert.equal(strip(linked), 'session context ~136k  [██████████░░░░░]  Compress & New Session (⌘-click): light ≤1.4k · mid ≤4.1k · detailed ≤13.6k');
   assert.deepEqual(
     [...linked.matchAll(/\x1b\]8;;([^\x07]+)\x07([^\x1b]+)\x1b\]8;;\x07/g)].map((m) => [m[1], m[2]]),
     [[links.light, 'light'], [links.mid, 'mid'], [links.detailed, 'detailed']],

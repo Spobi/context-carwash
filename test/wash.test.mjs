@@ -512,8 +512,8 @@ test('the first session after install is welcomed, once', () => {
   assert.equal(start('resume'), null);
 
   const first = start('startup');
-  assert.match(first.systemMessage, /^Context Carwash is installed\. This note is shown once\.\n/);
-  assert.match(first.systemMessage, /\/wash to compress & save context into a short brief, then \/clear/);
+  assert.match(first.systemMessage, /^Context Carwash installed ✓ \(shown once\)\n/);
+  assert.match(first.systemMessage, /\/wash, then \/clear/);
   assert.equal(first.hookSpecificOutput, undefined);
   assert.equal(start('startup', { session: 'S3' }), null);
   assert.equal(start('clear', { session: 'S4' }), null);
@@ -523,7 +523,7 @@ test('the first session after install is welcomed, once', () => {
   wash('light');
   assert.match(start('clear').systemMessage, /^Loaded your Carwash brief/);
   assert.equal(ready().length, 0);
-  assert.match(start('clear', { session: 'S5' }).systemMessage, /^Context Carwash is installed/);
+  assert.match(start('clear', { session: 'S5' }).systemMessage, /^Context Carwash installed/);
 });
 
 test('the loaded message leaves out the old size when it was never known', () => {
@@ -674,30 +674,30 @@ test('the status line says when a brief is being written and when one is ready',
   // End to end, under the pid Claude Code reports.
   wash('light', { me: { pid: 424_242, start: null }, prompt: 'P2' });
   const line = await statusline({ input: JSON.stringify(payload), env: { ...env, CLAUDE_PID: '424242', TERM_PROGRAM: 'xterm', NO_COLOR: '1' } });
-  assert.equal(line, 'context ~136k  [██████████░░░░░]  Brief ready ✓ light ~61 · type /clear to start fresh with it. Old session stays in /resume.');
+  assert.equal(line, 'session context ~136k  [██████████░░░░░]  Brief ready ✓ light ~61 · type /clear to start fresh with it. Old session stays in /resume.');
 });
 
 test('wash states fit any width, losing detail before overflowing', () => {
   const payload = { context_window: { context_window_size: 200_000, used_percentage: 68 } };
   const env = { TERM_PROGRAM: 'Apple_Terminal', NO_COLOR: '1' };
   const ready = (columns) => render(payload, { env, columns, state: { ready: { level: 'mid', tokens: 3100 } } }).text;
-  assert.equal(ready(Infinity), 'context ~136k  [██████████░░░░░]  Brief ready ✓ mid ~3.1k · type /clear to start fresh with it. Old session stays in /resume.');
-  assert.equal(ready(124), 'context ~136k  [██████████░░░░░]  Brief ready ✓ mid ~3.1k · type /clear to start fresh with it');
-  assert.equal(ready(94), 'context ~136k  [██████████░░░░░]  Brief ready ✓ mid ~3.1k · type /clear to start fresh with it');
-  assert.equal(ready(93), 'context ~136k  [██████████░░░░░]  Brief ready ✓ · type /clear');
-  assert.equal(ready(61), 'context ~136k  [██████████░░░░░]  Brief ready ✓ · type /clear');
-  assert.equal(ready(60), 'context ~136k  Brief ready ✓ · type /clear');
-  assert.equal(ready(41), 'context ~136k  Brief ready ✓');
-  assert.equal(ready(27), 'context ~136k');
+  assert.equal(ready(Infinity), 'session context ~136k  [██████████░░░░░]  Brief ready ✓ mid ~3.1k · type /clear to start fresh with it. Old session stays in /resume.');
+  assert.equal(ready(131), 'session context ~136k  [██████████░░░░░]  Brief ready ✓ mid ~3.1k · type /clear to start fresh with it');
+  assert.equal(ready(102), 'session context ~136k  [██████████░░░░░]  Brief ready ✓ mid ~3.1k · type /clear to start fresh with it');
+  assert.equal(ready(101), 'session context ~136k  [██████████░░░░░]  Brief ready ✓ · /clear to start fresh');
+  assert.equal(ready(79), 'session context ~136k  [██████████░░░░░]  Brief ready ✓ · /clear to start fresh');
+  assert.equal(ready(78), 'session context ~136k  Brief ready ✓ · /clear to start fresh');
+  assert.equal(ready(59), 'session context ~136k  Brief ready ✓');
+  assert.equal(ready(35), 'session context ~136k');
 
   const washing = (columns) => render(payload, { env, columns, state: { washing: 'mid' } }).text;
-  assert.equal(washing(Infinity), 'context ~136k  [██████████░░░░░]  washing…');
-  assert.equal(washing(42), 'context ~136k  [██████████░░░░░]  washing…');
-  assert.equal(washing(41), 'context ~136k  washing…');
-  assert.equal(washing(22), 'context ~136k');
+  assert.equal(washing(Infinity), 'session context ~136k  [██████████░░░░░]  washing…');
+  assert.equal(washing(50), 'session context ~136k  [██████████░░░░░]  washing…');
+  assert.equal(washing(49), 'session context ~136k  washing…');
+  assert.equal(washing(30), 'session context ~136k');
 
-  // The shortest reading, "context ~136k", is 13 columns: below that nothing can fit.
-  for (let columns = 13; columns <= 140; columns++) {
+  // The shortest reading, "session context ~136k", is 21 columns: below that nothing can fit.
+  for (let columns = 21; columns <= 140; columns++) {
     assert.ok(visibleWidth(ready(columns)) <= columns, `ready overflows at ${columns}`);
     assert.ok(visibleWidth(washing(columns)) <= columns, `washing overflows at ${columns}`);
   }

@@ -12,10 +12,13 @@ const FULL = 'getting full';
 
 // What /wash does, said plainly. The levels and their caps are left to the
 // command menu and /wash help, which show them when someone is choosing. The
-// middle form keeps the meaning in an 80-column window, the Terminal.app default.
+// full form needs a wide window, the long one fits about half a Mac screen, and
+// the middle one keeps the /clear step in an 80-column window, the Terminal.app
+// default.
+const HINT_FULL = '/wash to compress & save context, then /clear keeps compressed context';
 const HINT_LONG = '/wash to compress & save context, then /clear';
 const HINT_MID = '/wash to compress, then /clear';
-const HINT_SHORT = '/wash, then /clear';
+const HINT_SHORT = '/wash to compress';
 
 const finite = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
 
@@ -97,7 +100,7 @@ export function render(payload, options = {}) {
   // The reading is the tokens in use, and nothing else: a count is something
   // people can picture, and the bar already shows how much of the window that
   // is, so neither a percentage nor the window size is spelled out.
-  const usedSeg = `context ${used ? `~${formatTokens(used)}` : '--'}`;
+  const usedSeg = `session context ${used ? `~${formatTokens(used)}` : '--'}`;
   const barSeg = bar(pct, depth, options.barStyle ?? 'ramp');
   const caps = capLabels(used);
   // Only while inviting a wash: once one is under way there is nothing to add.
@@ -112,8 +115,8 @@ export function render(payload, options = {}) {
     candidates = [
       [usedSeg, barSeg, `${ready}. Old session stays in /resume.`],
       [usedSeg, barSeg, ready],
-      [usedSeg, barSeg, 'Brief ready ✓ · type /clear'],
-      [usedSeg, 'Brief ready ✓ · type /clear'],
+      [usedSeg, barSeg, 'Brief ready ✓ · /clear to start fresh'],
+      [usedSeg, 'Brief ready ✓ · /clear to start fresh'],
       [usedSeg, 'Brief ready ✓'],
     ];
   } else if (options.state?.washing) {
@@ -130,6 +133,7 @@ export function render(payload, options = {}) {
     ];
   } else {
     candidates = [
+      [usedSeg, barSeg, say(HINT_FULL)],
       [usedSeg, barSeg, say(HINT_LONG)],
       [usedSeg, barSeg, say(HINT_MID)],
       [usedSeg, barSeg, say(HINT_SHORT)],

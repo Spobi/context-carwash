@@ -31,16 +31,16 @@ Start a new Claude Code session afterwards. The first one explains the meter and
 ## The meter
 
 ```text
-context ~136k  [██████████░░░░░]  /wash to compress & save context, then /clear
+session context ~136k  [██████████░░░░░]  /wash to compress & save context, then /clear keeps compressed context
 ```
 
 The number is how many tokens the conversation is using. It comes from Claude Code and is an estimate. The bar shows how close that is to the most the model's context window holds, and changes colour as it fills. From three quarters on, the meter also says so in words:
 
 ```text
-context ~150k  [███████████░░░░]  getting full · /wash to compress & save context, then /clear
+session context ~150k  [███████████░░░░]  getting full · /wash to compress & save context, then /clear keeps compressed context
 ```
 
-Narrower windows show less: the sentence shortens first (`/wash to compress, then /clear` fits an 80-column window), then the bar goes.
+Narrower windows show less. The sentence shortens first: `/wash to compress & save context, then /clear` fits about half a Mac screen, `/wash to compress, then /clear` fits an 80-column window, and the narrowest windows show `/wash to compress`. Then the bar goes.
 
 A full meter is information. It never triggers anything.
 

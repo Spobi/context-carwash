@@ -111,10 +111,10 @@ export function loadedMessage(record, now, stale) {
 // Shown once, at the first session after install.
 export function welcomeMessage() {
   return [
-    'Context Carwash is installed. This note is shown once.',
-    'The status line shows how many tokens this conversation is using, and the bar shows how close that is to the model\'s limit. It changes colour as it fills and says "getting full" from three quarters on.',
-    'To start fresh without losing your place: /wash to compress & save context into a short brief, then /clear. The new session begins with the brief, and the old one stays in /resume.',
-    'Nothing happens unless you ask. /wash help shows the options.',
+    'Context Carwash installed ✓ (shown once)',
+    '  • Status line: tokens in use, and how full the context is',
+    '  • Getting full? /wash, then /clear. You start fresh, right where you left off',
+    '  • Nothing runs on its own · /wash help for options',
   ].join('\n');
 }
 

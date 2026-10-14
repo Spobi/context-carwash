@@ -24,7 +24,7 @@ const input = JSON.stringify({
   session_id: 'abc',
   context_window: { context_window_size: 200_000, used_percentage: 68, current_usage: { input_tokens: 136_000 } },
 });
-const OURS = 'context ~136k  [██████████░░░░░]  /wash to compress & save context, then /clear';
+const OURS = 'session context ~136k  [██████████░░░░░]  /wash to compress & save context, then /clear keeps compressed context';
 
 // A Carwash home whose install record says the user had this status line.
 function homeWrapping(command) {
@@ -50,7 +50,7 @@ test('without an install record, only the meter is printed', async () => {
 test('malformed or empty input still prints a meter', async () => {
   const env = { ...plain, CARWASH_HOME: homeWrapping() };
   for (const bad of ['', 'not json', '[1,2', 'null', '42']) {
-    assert.equal(await statusline({ input: bad, env }), 'context --  [░░░░░░░░░░░░░░░]  /wash to compress & save context, then /clear');
+    assert.equal(await statusline({ input: bad, env }), 'session context --  [░░░░░░░░░░░░░░░]  /wash to compress & save context, then /clear keeps compressed context');
   }
 });
 
@@ -77,12 +77,12 @@ test('a wrapped status line that fails, prints nothing or hangs does not break t
 
 test('compose puts the meter beside a short line and below a long or crowded one', () => {
   const p = JSON.parse(input);
-  const options = { env: plain, columns: 100 };
+  const options = { env: plain, columns: 130 };
   assert.equal(compose('main ✓', p, options), `main ✓ │ ${OURS}`);
   // Colour codes in their output do not count towards its width.
   assert.equal(compose('\x1b[32mmain ✓\x1b[0m\n', p, options), `\x1b[32mmain ✓\x1b[0m │ ${OURS}`);
   // Less room beside theirs: the meter gives up detail before it gives up the line.
-  assert.equal(compose('x'.repeat(20), p, options), `${'x'.repeat(20)} │ context ~136k  [██████████░░░░░]  /wash to compress, then /clear`);
+  assert.equal(compose('x'.repeat(50), p, options), `${'x'.repeat(50)} │ session context ~136k  [██████████░░░░░]  /wash to compress, then /clear`);
   // Not enough room left for the bar: the meter moves to its own line.
   const long = 'x'.repeat(80);
   assert.equal(compose(long, p, options), `${long}\n${OURS}`);
@@ -110,12 +110,12 @@ test('the carwash statusline command works end to end', () => {
   const home = homeWrapping();
   let result = run(input, { CARWASH_HOME: home, COLUMNS: '80' });
   assert.equal(result.status, 0);
-  assert.equal(result.stdout, 'context ~136k  [██████████░░░░░]  /wash to compress, then /clear\n');
+  assert.equal(result.stdout, 'session context ~136k  [██████████░░░░░]  /wash to compress, then /clear\n');
   assert.equal(result.stderr, '');
 
   result = run('garbage', { CARWASH_HOME: home });
   assert.equal(result.status, 0);
-  assert.equal(result.stdout, 'context --  [░░░░░░░░░░░░░░░]  /wash to compress & save context, then /clear\n');
+  assert.equal(result.stdout, 'session context --  [░░░░░░░░░░░░░░░]  /wash to compress & save context, then /clear keeps compressed context\n');
 
   // A corrupt install record must not take the status line down.
   mkdirSync(home, { recursive: true });
