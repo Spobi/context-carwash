@@ -39,18 +39,18 @@ export function statsReport(sum, { inClaude = false } = {}) {
 // --- sharing ---------------------------------------------------------------
 
 // The Google Form shares go to. Each share becomes one row of the form's
-// response sheet. Until the form exists, sharing says it is not set up.
+// response sheet.
 export const FORM = {
-  action: null, // https://docs.google.com/forms/d/e/<form id>/formResponse
+  action: 'https://docs.google.com/forms/d/e/1FAIpQLScMU96dzQ1DC4p-K-09wRF6aTYC23Kw3VNmOZbnI55iyXQnYQ/formResponse',
   fields: {
-    shareId: null,
-    version: null,
-    system: null,
-    days: null,
-    washes: null,
-    prompts: null,
-    notResent: null,
-    briefCost: null,
+    shareId: 'entry.444662411',
+    version: 'entry.237740820',
+    system: 'entry.1585190609',
+    days: 'entry.1959206368',
+    washes: 'entry.822622585',
+    prompts: 'entry.93311455',
+    notResent: 'entry.1048114223',
+    briefCost: 'entry.164624594',
   },
 };
 
