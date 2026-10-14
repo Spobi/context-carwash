@@ -112,7 +112,7 @@ export function loadedMessage(record, now, stale) {
 export function welcomeMessage() {
   return [
     'Context Carwash is installed. This note is shown once.',
-    'The status line shows how many tokens this conversation is using, out of what the model can hold. It changes colour as it fills and says "getting full" from three quarters on.',
+    'The status line shows how many tokens this conversation is using, and the bar shows how close that is to the model\'s limit. It changes colour as it fills and says "getting full" from three quarters on.',
     'To start fresh without losing your place: /wash to compress & save context into a short brief, then /clear. The new session begins with the brief, and the old one stays in /resume.',
     'Nothing happens unless you ask. /wash help shows the options.',
   ].join('\n');
@@ -142,7 +142,7 @@ export function helpMessage(used) {
     row('discard', 'drop the brief; /clear is a normal clear again'),
     row('load [id]', 'make a waiting brief the one /clear uses'),
     '',
-    'The status line shows how many tokens this conversation is using, out of what the model can hold.',
+    "The status line shows how many tokens this conversation is using, and the bar shows how close that is to the model's limit.",
     'Writing a brief is an ordinary Claude reply, so it uses tokens. help, discard and load do not.',
   ].join('\n');
 }

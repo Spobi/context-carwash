@@ -483,7 +483,7 @@ test('/wash help explains the meter and the options without reaching Claude', ()
       '  /wash discard         drop the brief; /clear is a normal clear again',
       '  /wash load [id]       make a waiting brief the one /clear uses',
       '',
-      'The status line shows how many tokens this conversation is using, out of what the model can hold.',
+      "The status line shows how many tokens this conversation is using, and the bar shows how close that is to the model's limit.",
       'Writing a brief is an ordinary Claude reply, so it uses tokens. help, discard and load do not.',
     ].join('\n'),
   );
@@ -674,28 +674,27 @@ test('the status line says when a brief is being written and when one is ready',
   // End to end, under the pid Claude Code reports.
   wash('light', { me: { pid: 424_242, start: null }, prompt: 'P2' });
   const line = await statusline({ input: JSON.stringify(payload), env: { ...env, CLAUDE_PID: '424242', TERM_PROGRAM: 'xterm', NO_COLOR: '1' } });
-  assert.equal(line, 'context ~136k/200k  [██████████░░░░░]  Brief ready ✓ light ~61 · type /clear to start fresh with it. Old session stays in /resume.');
+  assert.equal(line, 'context ~136k  [██████████░░░░░]  Brief ready ✓ light ~61 · type /clear to start fresh with it. Old session stays in /resume.');
 });
 
 test('wash states fit any width, losing detail before overflowing', () => {
   const payload = { context_window: { context_window_size: 200_000, used_percentage: 68 } };
   const env = { TERM_PROGRAM: 'Apple_Terminal', NO_COLOR: '1' };
   const ready = (columns) => render(payload, { env, columns, state: { ready: { level: 'mid', tokens: 3100 } } }).text;
-  assert.equal(ready(Infinity), 'context ~136k/200k  [██████████░░░░░]  Brief ready ✓ mid ~3.1k · type /clear to start fresh with it. Old session stays in /resume.');
-  assert.equal(ready(116), 'context ~136k/200k  [██████████░░░░░]  Brief ready ✓ mid ~3.1k · type /clear to start fresh with it');
+  assert.equal(ready(Infinity), 'context ~136k  [██████████░░░░░]  Brief ready ✓ mid ~3.1k · type /clear to start fresh with it. Old session stays in /resume.');
+  assert.equal(ready(124), 'context ~136k  [██████████░░░░░]  Brief ready ✓ mid ~3.1k · type /clear to start fresh with it');
   assert.equal(ready(94), 'context ~136k  [██████████░░░░░]  Brief ready ✓ mid ~3.1k · type /clear to start fresh with it');
+  assert.equal(ready(93), 'context ~136k  [██████████░░░░░]  Brief ready ✓ · type /clear');
   assert.equal(ready(61), 'context ~136k  [██████████░░░░░]  Brief ready ✓ · type /clear');
-  assert.equal(ready(42), 'context ~136k  Brief ready ✓ · type /clear');
-  assert.equal(ready(30), 'context ~136k  Brief ready ✓');
-  assert.equal(ready(20), 'context ~136k/200k');
-  assert.equal(ready(17), 'context ~136k');
+  assert.equal(ready(60), 'context ~136k  Brief ready ✓ · type /clear');
+  assert.equal(ready(41), 'context ~136k  Brief ready ✓');
+  assert.equal(ready(27), 'context ~136k');
 
   const washing = (columns) => render(payload, { env, columns, state: { washing: 'mid' } }).text;
-  assert.equal(washing(Infinity), 'context ~136k/200k  [██████████░░░░░]  washing…');
-  assert.equal(washing(46), 'context ~136k  [██████████░░░░░]  washing…');
+  assert.equal(washing(Infinity), 'context ~136k  [██████████░░░░░]  washing…');
+  assert.equal(washing(42), 'context ~136k  [██████████░░░░░]  washing…');
   assert.equal(washing(41), 'context ~136k  washing…');
-  assert.equal(washing(22), 'context ~136k/200k');
-  assert.equal(washing(17), 'context ~136k');
+  assert.equal(washing(22), 'context ~136k');
 
   // The shortest reading, "context ~136k", is 13 columns: below that nothing can fit.
   for (let columns = 13; columns <= 140; columns++) {

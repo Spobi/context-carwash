@@ -31,16 +31,16 @@ Start a new Claude Code session afterwards. The first one explains the meter and
 ## The meter
 
 ```text
-context ~136k/200k  [██████████░░░░░]  /wash to compress & save context, then /clear
+context ~136k  [██████████░░░░░]  /wash to compress & save context, then /clear
 ```
 
-The first number is how many tokens the conversation is using, and the second is how many the model's context window holds. Both come from Claude Code and are estimates. The bar shows the same thing as a proportion, and changes colour as it fills. From three quarters on, the meter also says so in words:
+The number is how many tokens the conversation is using. It comes from Claude Code and is an estimate. The bar shows how close that is to the most the model's context window holds, and changes colour as it fills. From three quarters on, the meter also says so in words:
 
 ```text
-context ~150k/200k  [███████████░░░░]  getting full · /wash to compress & save context, then /clear
+context ~150k  [███████████░░░░]  getting full · /wash to compress & save context, then /clear
 ```
 
-Narrower windows show less: the window size goes first, then the sentence shortens (`/wash to compress, then /clear` fits an 80-column window), then the bar.
+Narrower windows show less: the sentence shortens first (`/wash to compress, then /clear` fits an 80-column window), then the bar goes.
 
 A full meter is information. It never triggers anything.
 

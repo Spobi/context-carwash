@@ -85,20 +85,19 @@ function linkedAction(caps, links, modifier) {
 // options.state     { washing: level } while a brief is being written, or
 //                   { ready: { level, tokens } } once one is waiting for /clear
 //
-// Returns { text, hasBar }: the richest candidate that fits. Narrow widths lose
-// the window size first, then the invitation shortens in two steps (the first
-// gives the window size its room back), then the bar goes, and finally
+// Returns { text, hasBar }: the richest candidate that fits. Narrow widths
+// shorten the invitation in two steps, then lose the bar, and finally
 // everything but the tokens in use and, once it applies, "getting full".
 export function render(payload, options = {}) {
   const env = options.env ?? process.env;
   const columns = options.columns ?? availableColumns(env);
   const depth = colorDepth(env);
-  const { pct, used, size } = readUsage(payload);
+  const { pct, used } = readUsage(payload);
 
-  // The reading is given in tokens, never as a percentage: a count is
-  // something people can picture, and the bar already shows the proportion.
+  // The reading is the tokens in use, and nothing else: a count is something
+  // people can picture, and the bar already shows how much of the window that
+  // is, so neither a percentage nor the window size is spelled out.
   const usedSeg = `context ${used ? `~${formatTokens(used)}` : '--'}`;
-  const countSeg = used && size ? `${usedSeg}/${formatTokens(size)}` : usedSeg;
   const barSeg = bar(pct, depth, options.barStyle ?? 'ramp');
   const caps = capLabels(used);
   // Only while inviting a wash: once one is under way there is nothing to add.
@@ -111,8 +110,7 @@ export function render(payload, options = {}) {
     const { level, tokens } = options.state.ready;
     const ready = `Brief ready ✓ ${level} ~${formatTokens(tokens)} · type /clear to start fresh with it`;
     candidates = [
-      [countSeg, barSeg, `${ready}. Old session stays in /resume.`],
-      [countSeg, barSeg, ready],
+      [usedSeg, barSeg, `${ready}. Old session stays in /resume.`],
       [usedSeg, barSeg, ready],
       [usedSeg, barSeg, 'Brief ready ✓ · type /clear'],
       [usedSeg, 'Brief ready ✓ · type /clear'],
@@ -120,31 +118,26 @@ export function render(payload, options = {}) {
     ];
   } else if (options.state?.washing) {
     candidates = [
-      [countSeg, barSeg, 'washing…'],
       [usedSeg, barSeg, 'washing…'],
       [usedSeg, 'washing…'],
     ];
   } else if (options.links && supportsLinks(env)) {
     const modifier = clickModifier(options.platform);
     candidates = [
-      [countSeg, barSeg, say(linkedAction(caps, options.links, modifier))],
-      [countSeg, barSeg, say(linkedAction(null, options.links, modifier))],
+      [usedSeg, barSeg, say(linkedAction(caps, options.links, modifier))],
       [usedSeg, barSeg, say(linkedAction(null, options.links, modifier))],
       [usedSeg, say(linkedAction(null, options.links, modifier))],
     ];
   } else {
     candidates = [
-      [countSeg, barSeg, say(HINT_LONG)],
       [usedSeg, barSeg, say(HINT_LONG)],
-      // Once the long form cannot fit, the window size gets its room back.
-      [countSeg, barSeg, say(HINT_MID)],
       [usedSeg, barSeg, say(HINT_MID)],
       [usedSeg, barSeg, say(HINT_SHORT)],
       [usedSeg, say(HINT_SHORT)],
     ];
   }
-  if (full) candidates.push([countSeg, FULL], [usedSeg, FULL]);
-  candidates.push([countSeg], [usedSeg]);
+  if (full) candidates.push([usedSeg, FULL]);
+  candidates.push([usedSeg]);
 
   for (const segments of candidates) {
     const text = segments.join(GAP);
