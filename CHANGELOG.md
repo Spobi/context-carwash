@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.9
+
+- Friendlier README wording.
+
 ## 0.1.8
 
 - Shorter, clearer README.
