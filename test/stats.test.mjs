@@ -84,7 +84,10 @@ test('washes and deliveries are kept in the ledger and totalled', () => {
   // A brief written but never used still counts what it cost.
   wash('light', { session: 'S3', used: 50_000 });
 
-  const [first, second] = readLedger(env);
+  // Both are written at the same moment, so find them by level, not order.
+  const entries = readLedger(env);
+  const first = entries.find((entry) => entry.level === 'mid');
+  const second = entries.find((entry) => entry.level === 'light');
   assert.equal(first.level, 'mid');
   assert.equal(first.deliveries.length, 1);
   assert.equal(first.deliveries[0].transcript, file);

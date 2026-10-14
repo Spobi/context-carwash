@@ -1,4 +1,6 @@
 import { existsSync, writeFileSync } from 'node:fs';
+import { packageVersion } from '../install/install.mjs';
+import { startNotice, versionLine } from '../install/notice.mjs';
 import { DEFAULT_LEVEL, capFor, estimateTokens, isLevel } from '../levels.mjs';
 import { installRecordPath, welcomedPath } from '../paths.mjs';
 import { recordDelivery, recordWash, refreshLedger, totals } from '../stats/ledger.mjs';
@@ -18,6 +20,8 @@ import { AUTO_LOAD_MS, addRecord, claim, findRecords, purge, readyRecords, remov
 //                        save it.
 //   SessionStart         A session began. If a brief is meant for it, hand the
 //                        brief over. The first one after install says hello.
+//                        It also starts the daily update check, in the
+//                        background, and passes on what the last one found.
 //
 // Each handler returns the JSON to print for Claude Code, or null to stay out
 // of the way. None of them ever clears, restarts, or runs anything.
@@ -55,7 +59,7 @@ function onExpansion(payload, ctx) {
   if (verb === 'discard') return block(discard(payload, ref, ctx));
   if (verb === 'load') return block(load(payload, ref, ctx));
   if (verb === 'stats') return block(statsReport(totals(refreshLedger(ctx.env, { now: ctx.now, force: true }), ctx.now), { inClaude: true }));
-  if (verb === 'help') return block(helpMessage(loadUsage(ctx.env, payload.session_id)?.used ?? null));
+  if (verb === 'help') return block(helpMessage(loadUsage(ctx.env, payload.session_id)?.used ?? null, versionLine(ctx.version, ctx.env)));
   return block(`/wash does not know "${verb}". ${USAGE}`);
 }
 
@@ -217,7 +221,13 @@ function onSessionStart(payload, ctx) {
   if (payload.source !== 'startup' && payload.source !== 'clear') return null;
   if (unattended(ctx.env)) return null;
   // The welcome waits for a start that has nothing else to say.
-  return briefAtStart(payload, ctx) ?? welcome(ctx);
+  const result = briefAtStart(payload, ctx) ?? welcome(ctx);
+  quietly(ctx, () => ctx.checkUpdates?.());
+  let notice = null;
+  quietly(ctx, () => (notice = startNotice(ctx.version, ctx.env)));
+  if (!notice) return result;
+  if (!result) return { systemMessage: notice };
+  return { ...result, systemMessage: result.systemMessage ? `${result.systemMessage}\n\n${notice}` : notice };
 }
 
 function briefAtStart(payload, ctx) {
@@ -265,7 +275,10 @@ function briefAtStart(payload, ctx) {
 // --- entry point -----------------------------------------------------------
 
 // Handle one hook call. `input` is the JSON Claude Code sends on stdin.
-export function runHook({ input, env = process.env, platform = process.platform, now = Date.now(), me, running, onError } = {}) {
+//
+// `checkUpdates` starts the daily update check. Only the real command passes
+// it, so tests never go online.
+export function runHook({ input, env = process.env, platform = process.platform, now = Date.now(), me, running, onError, checkUpdates, version = packageVersion() } = {}) {
   let payload;
   try {
     payload = JSON.parse(input);
@@ -279,6 +292,8 @@ export function runHook({ input, env = process.env, platform = process.platform,
     me: me ?? currentProcess(env, platform),
     isRunning: running ?? ((owner) => isRunning(owner, platform)),
     onError,
+    checkUpdates,
+    version,
   };
   switch (payload.hook_event_name) {
     case 'UserPromptExpansion':

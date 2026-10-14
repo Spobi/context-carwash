@@ -1,5 +1,7 @@
 import { spawn } from 'node:child_process';
 import { readFileSync } from 'node:fs';
+import { packageVersion } from '../install/install.mjs';
+import { statusNotice } from '../install/notice.mjs';
 import { installRecordPath } from '../paths.mjs';
 import { render } from './render.mjs';
 import { washState } from './state.mjs';
@@ -102,6 +104,22 @@ function wrappedCommand(env) {
   }
 }
 
+// A line under the meter when there is news: the author's warning about this
+// version, hook errors since doctor was last run, or a newer version. Cut to
+// the window, since a wrapped line would push the meter around.
+export function withNotice(text, env = process.env, version = packageVersion()) {
+  let notice = null;
+  try {
+    notice = statusNotice(version, env);
+  } catch {
+    // no news is fine
+  }
+  if (!notice) return text;
+  const columns = availableColumns(env);
+  if (visibleWidth(notice) > columns) notice = `${[...notice].slice(0, Math.max(1, columns - 1)).join('')}…`;
+  return text ? `${text}\n${notice}` : notice;
+}
+
 // Entry point for `carwash statusline`. Must never fail loudly: a broken
 // status line is worse than a missing meter, and the user's own status line
 // has to keep working whatever happens to ours.
@@ -126,7 +144,7 @@ export async function statusline({ input, env = process.env, platform = process.
     } catch {
       // Without it the meter still renders, minus any word about a brief.
     }
-    return compose(theirs, payload, { env, platform, state });
+    return withNotice(compose(theirs, payload, { env, platform, state }), env);
   } catch {
     return (theirs ?? '').replace(/\s+$/, '');
   }

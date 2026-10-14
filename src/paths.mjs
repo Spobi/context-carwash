@@ -35,6 +35,14 @@ export const shareIdPath = (env = process.env) => join(carwashHome(env), 'share-
 
 export const errorLogPath = (env = process.env) => join(carwashHome(env), 'errors.log');
 
+// Touched when someone has looked at the errors (doctor) or just installed, so
+// the status line only mentions errors logged after that.
+export const errorsSeenPath = (env = process.env) => join(carwashHome(env), 'errors-seen');
+
+// What the last daily check found on npm: the newest version and any warning
+// the author put on this one.
+export const noticePath = (env = process.env) => join(carwashHome(env), 'notice.json');
+
 // Present once the first-run welcome has been shown.
 export const welcomedPath = (env = process.env) => join(carwashHome(env), 'welcomed');
 

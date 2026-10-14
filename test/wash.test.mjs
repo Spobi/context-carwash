@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { packageVersion } from '../src/install/install.mjs';
 import { capFor, estimateTokens } from '../src/levels.mjs';
 import { render } from '../src/statusline/render.mjs';
 import { statusline } from '../src/statusline/run.mjs';
@@ -485,6 +486,8 @@ test('/wash help explains the meter and the options without reaching Claude', ()
       '',
       "The status line shows how many tokens this conversation is using, and the bar shows how close that is to the model's limit.",
       'Writing a brief is an ordinary Claude reply, so it uses tokens. help, discard and load do not.',
+      '',
+      `Carwash ${packageVersion()}. Something not working? Run in a terminal: npx context-carwash doctor`,
     ].join('\n'),
   );
   // Before the first reply there is no reading, so no sizes are claimed.

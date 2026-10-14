@@ -21,7 +21,8 @@
   },
   "files": [
     "bin",
-    "src"
+    "src",
+    "CHANGELOG.md"
   ],
   "scripts": {
     "test": "node --test"

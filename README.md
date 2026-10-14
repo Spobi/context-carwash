@@ -5,7 +5,7 @@ A small, local-first utility for Claude Code.
 - **Meter:** a quiet estimate of the active context window in the status line.
 - **Wash:** when you ask, Claude writes a short handoff brief, and your next `/clear` starts a fresh session that begins with it.
 
-Nothing happens automatically, and nothing leaves your machine. Two exceptions: the installer asks npm whether a newer version is out, and `carwash stats --share` sends anonymous totals if you run it and say yes.
+Nothing happens automatically, and nothing about you is ever sent. Carwash goes online in two ways: once a day it reads its own public page on npm to see if a newer version is out (you can turn that off), and `carwash stats --share` sends anonymous totals if you run it and say yes.
 
 **Status:** pre-release. The meter and the typed `/wash` command work today. Clickable links in the status line and the one-step restart are not built yet. See [plan-3.md](plan-3.md) for the design.
 
@@ -18,7 +18,9 @@ npx context-carwash preview     # sample meters in your terminal, nothing instal
 npx context-carwash install     # lists what it will change, then asks
 ```
 
-To update later, run `npx context-carwash install` again. Waiting briefs are kept. If npx reruns an older copy it downloaded before, the installer notices that npm has a newer version and installs that one instead.
+To update later, run `npx context-carwash@latest install`. Waiting briefs are kept. If npx reruns an older copy it downloaded before, the installer notices that npm has a newer version and installs that one instead.
+
+You do not have to watch for new versions. Once a day, when a session starts, Carwash checks npm in the background. If a newer version is out, or the version you have has a known problem, a line under the meter says so, with the command to update. `/wash help` shows the version you have.
 
 The installer copies itself to `~/.carwash/app` and makes three changes to Claude Code, all listed before you confirm:
 
@@ -106,11 +108,21 @@ npx context-carwash stats --share
 
 This shows every field it would send, and sends only if you say yes. It sends totals to a Google Form: a random share id made for sharing only (so sharing again replaces your last share), the Carwash version, your operating system, days since your first brief, and the numbers above. No names, folders, projects, prompts or briefs. You are not signed in to send it.
 
+## Something not working?
+
+```sh
+npx context-carwash doctor
+```
+
+This checks that the status line, hooks and `/wash` command are still in place, and shows your Carwash, Node, Claude Code and operating system versions, the newest version on npm, and the last few errors. Paste it into a [new issue](https://github.com/Spobi/context-carwash/issues/new).
+
+If a hook fails, the status line shows `Carwash hit an error` until you run `doctor`.
+
 ## Where things are kept
 
-Briefs are stored in `~/.carwash`, readable only by you, and never inside your project. So is the stats ledger (`~/.carwash/stats`): one small file per brief with its size, its level, and which fresh sessions it went to, but never the brief or your prompts. Nothing is uploaded in the background, and there is no telemetry. The installer reads the newest version number from npm (set `CARWASH_NO_UPDATE_CHECK=1` to skip that), and `stats --share` sends only when you run it and say yes.
+Briefs are stored in `~/.carwash`, readable only by you, and never inside your project. So is the stats ledger (`~/.carwash/stats`): one small file per brief with its size, its level, and which fresh sessions it went to, but never the brief or your prompts. Nothing about you is uploaded, and there is no telemetry. Once a day, a new session reads Carwash's public page on npm: the newest version, and any warning about the one you have. That is a download, like opening a web page, and it sends nothing about you, your projects or your use. The answer is kept in `~/.carwash/notice.json`. `install` and `doctor` read the same page when you run them. Set `CARWASH_NO_UPDATE_CHECK=1` to turn all of this off. `stats --share` sends only when you run it and say yes.
 
-If a hook fails it stays silent and writes the error to `~/.carwash/errors.log`.
+If a hook fails it stays silent, writes the error to `~/.carwash/errors.log`, and the status line says so.
 
 ## Uninstall
 

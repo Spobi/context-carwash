@@ -266,3 +266,11 @@ Decided by the user after reviewing what a newcomer could not work out from the 
 - Hooks: https://code.claude.com/docs/en/hooks
 - Commands: https://code.claude.com/docs/en/commands
 - Skills/custom commands: https://code.claude.com/docs/en/skills
+
+### Update notices and doctor (2026-10-14)
+
+- **Daily update check (amends "no network" in sections 4 and 9):** the `SessionStart` hook starts a detached `carwash update-check` at most once a day and never waits for it. It reads npm's abbreviated document for the package: `dist-tags.latest` and the `deprecated` message on the installed version. Nothing about the user is sent. The answer is kept in `~/.carwash/notice.json`. `CARWASH_NO_UPDATE_CHECK=1` turns the check and every notice off.
+- **The author's channel is `npm deprecate`:** no server of our own. A warning shows on the installed version until it is updated, as one line under the meter and once at each session start. It is cut at 200 characters, with control characters removed.
+- **Hook errors are visible:** a line under the meter says `Carwash hit an error` when `errors.log` is newer than `errors-seen`. `doctor` and install touch `errors-seen`.
+- **`carwash doctor`:** prints versions (Carwash installed and running, newest on npm, Node, OS, Claude Code), whether the status line, the three hooks and the skill are in place, the brief counts, and the last three errors, for pasting into an issue.
+- **One notice line at most, in this order:** the author's warning, then hook errors, then a newer version.

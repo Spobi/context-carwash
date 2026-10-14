@@ -127,7 +127,7 @@ const LEVEL_NOTES = {
 
 // /wash help. `used` is this session's reading, when known, so each level can
 // show the most tokens its brief may take here.
-export function helpMessage(used) {
+export function helpMessage(used, footer = null) {
   const row = (args, note) => `  /wash ${args.padEnd(16)}${note}`;
   const level = (name) => {
     const cap = capFor(name, used);
@@ -144,6 +144,7 @@ export function helpMessage(used) {
     '',
     "The status line shows how many tokens this conversation is using, and the bar shows how close that is to the model's limit.",
     'Writing a brief is an ordinary Claude reply, so it uses tokens. help, discard and load do not.',
+    ...(footer ? ['', footer] : []),
   ].join('\n');
 }
 

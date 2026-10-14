@@ -1,9 +1,12 @@
 import { appendFileSync, existsSync, statSync, writeFileSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { applyInstall, applyUninstall, describeInstall, describeUninstall, packageVersion, planInstall, planUninstall } from './install/install.mjs';
+import { claudeVersion, doctorReport, markErrorsSeen } from './install/doctor.mjs';
+import { fetchNotice, refreshNotice, startCheck } from './install/notice.mjs';
 import { UserError } from './install/settings.mjs';
 import { isNewer, latestVersion, runRelease } from './install/update.mjs';
-import { errorLogPath, welcomedPath } from './paths.mjs';
+import { errorLogPath, installRecordPath, welcomedPath } from './paths.mjs';
+import { readJson } from './files.mjs';
 import { refreshLedger, totals } from './stats/ledger.mjs';
 import { FORM, describeShare, sendShare, shareId, sharePayload, shareReady, statsReport } from './stats/report.mjs';
 import { render } from './statusline/render.mjs';
@@ -18,6 +21,7 @@ Usage: carwash <command>
   uninstall [--yes]   Undo everything install did
   preview             Print sample meters in this terminal
   stats [--share]     Show how much context /wash has saved; --share sends the totals anonymously, after asking
+  doctor              Check the install and show recent errors, to paste into a bug report
   --version           Print the version
 
 Inside Claude Code, once installed:
@@ -29,8 +33,10 @@ Inside Claude Code, once installed:
   /wash stats                      The same totals as carwash stats
   /wash help                       Explain the meter and the options
 
-Nothing happens automatically. Only two things go online: install, to ask npm
-for the newest version, and stats --share, once you have said yes.`;
+Nothing happens automatically, and nothing about you is ever sent. Once a day a
+new session reads Carwash's public page on npm for the newest version and any
+warning about yours (CARWASH_NO_UPDATE_CHECK=1 turns that off). install and
+doctor read it too. stats --share sends totals only after you say yes.`;
 
 async function readAll(stream) {
   if (stream.isTTY) return '';
@@ -93,7 +99,7 @@ function logError(env, error) {
   }
 }
 
-export async function main(argv, { env = process.env, stdin = process.stdin, stdout = process.stdout, stderr = process.stderr, latest = latestVersion, handOff = runRelease, form = FORM, share = sendShare } = {}) {
+export async function main(argv, { env = process.env, stdin = process.stdin, stdout = process.stdout, stderr = process.stderr, latest = latestVersion, handOff = runRelease, form = FORM, share = sendShare, notice = fetchNotice, claude = claudeVersion, check = startCheck } = {}) {
   const [command, ...rest] = argv;
   const yes = rest.includes('--yes') || rest.includes('-y');
   try {
@@ -104,7 +110,8 @@ export async function main(argv, { env = process.env, stdin = process.stdin, std
       case 'hook': {
         let output = null;
         try {
-          output = runHook({ input: await readAll(stdin), env, onError: (error) => logError(env, error) });
+          const version = packageVersion();
+          output = runHook({ input: await readAll(stdin), env, version, onError: (error) => logError(env, error), checkUpdates: () => check(version, { env }) });
         } catch (error) {
           logError(env, error);
         }
@@ -132,6 +139,8 @@ export async function main(argv, { env = process.env, stdin = process.stdin, std
           return 1;
         }
         applyInstall(plan);
+        // Errors from before this install are not news.
+        markErrorsSeen(env);
         const welcome = existsSync(welcomedPath(env)) ? '' : ' Its first message explains them.';
         stdout.write(`Installed. Start a new Claude Code session to get the meter and /wash.${welcome}\n`);
         return 0;
@@ -175,6 +184,18 @@ export async function main(argv, { env = process.env, stdin = process.stdin, std
       }
       case 'preview':
         preview(env, stdout);
+        return 0;
+      case 'doctor': {
+        const running = packageVersion();
+        const installed = readJson(installRecordPath(env))?.version;
+        const newest = await notice(typeof installed === 'string' ? installed : running, { env });
+        stdout.write(doctorReport({ env, running, newest, claude: claude({ env }) }) + '\n');
+        markErrorsSeen(env);
+        return 0;
+      }
+      // Started in the background by a session's start, at most once a day.
+      case 'update-check':
+        await refreshNotice(packageVersion(), { env });
         return 0;
       case '--version':
       case '-v':
