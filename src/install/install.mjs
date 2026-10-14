@@ -69,6 +69,16 @@ export function commandFor(verb, { nodePath, scriptPath, platform = process.plat
 
 export const statusLineCommand = (options) => commandFor('statusline', options);
 
+// The program a command from commandFor starts, with its quoting undone: the
+// Node it was installed with, or plain `node` on Windows.
+export function commandProgram(command) {
+  const word = /^\s*('(?:[^']|'\\'')*'|"[^"]*"|[^\s'"]+)/.exec(String(command ?? ''))?.[1];
+  if (!word) return null;
+  if (word.startsWith("'")) return word.slice(1, -1).replace(/'\\''/g, "'");
+  if (word.startsWith('"')) return word.slice(1, -1);
+  return word;
+}
+
 const runsCarwash = (verb) => (command) => typeof command === 'string' && new RegExp(`carwash\\.mjs['"]?\\s+${verb}\\s*$`).test(command);
 export const isCarwashCommand = runsCarwash('statusline');
 export const isCarwashHook = runsCarwash('hook');
@@ -178,7 +188,10 @@ export function planInstall({ env = process.env, platform = process.platform } =
   };
   const skill = planSkill(env);
 
-  return { home, appDir, file, settings, record, original, alreadyInstalled, next, skill, keepsHooks: isPlainObject(theirHooks) && Object.keys(theirHooks).length > 0 };
+  // The Node the commands will run with. Windows finds `node` on PATH instead.
+  const node = platform === 'win32' ? null : script.nodePath;
+
+  return { home, appDir, file, settings, record, original, alreadyInstalled, next, skill, node, keepsHooks: isPlainObject(theirHooks) && Object.keys(theirHooks).length > 0 };
 }
 
 export function describeInstall(plan) {
@@ -202,6 +215,9 @@ export function describeInstall(plan) {
   }
   lines.push(`  3. Add the /wash command at ${tilde(plan.skill.dir)}`);
   lines.push('', 'Writing a brief is an ordinary Claude reply, so it uses tokens like any other.');
+  // Version managers such as nvm keep a folder per Node version, so removing
+  // an old version takes this path with it, and nothing of Carwash can start.
+  if (plan.node) lines.push(`Carwash runs with the Node at ${tilde(plan.node)}. If you remove that Node later, for example an old version in nvm, run install again.`);
   lines.push('Nothing else is touched. To undo everything: carwash uninstall');
   return lines.join('\n');
 }

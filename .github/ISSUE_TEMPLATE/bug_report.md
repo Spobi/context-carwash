@@ -13,6 +13,8 @@ labels: bug
 
 **Output of `npx context-carwash doctor`**
 
+Issues are public, so look it over first: error details can include folder names.
+
 ```text
 paste it here
 ```

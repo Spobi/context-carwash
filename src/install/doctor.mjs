@@ -6,7 +6,7 @@ import { readJson } from '../files.mjs';
 import { errorLogPath, errorsSeenPath, installRecordPath, settingsPath, skillDir } from '../paths.mjs';
 import { refreshLedger, totals } from '../stats/ledger.mjs';
 import { readyRecords } from '../wash/store.mjs';
-import { isCarwashCommand, isCarwashHook } from './install.mjs';
+import { commandProgram, isCarwashCommand, isCarwashHook } from './install.mjs';
 import { UPDATE_COMMAND } from './notice.mjs';
 import { readSettings, resolveSettingsFile } from './settings.mjs';
 import { isNewer } from './update.mjs';
@@ -59,7 +59,19 @@ function settingsCheck(env) {
   }
   const groups = (event) => (Array.isArray(data?.hooks?.[event]) ? data.hooks[event] : []);
   const hooks = Object.fromEntries(HOOK_EVENTS.map((event) => [event, groups(event).some((group) => Array.isArray(group?.hooks) && group.hooks.some((hook) => isCarwashHook(hook?.command)))]));
-  return { readable: true, statusLine: isCarwashCommand(data?.statusLine?.command), hooks };
+  const hookCommands = HOOK_EVENTS.flatMap((event) => groups(event).flatMap((group) => (Array.isArray(group?.hooks) ? group.hooks.map((hook) => hook?.command) : [])));
+  const ours = [data?.statusLine?.command, ...hookCommands].filter((command) => isCarwashCommand(command) || isCarwashHook(command));
+  return { readable: true, statusLine: isCarwashCommand(data?.statusLine?.command), hooks, nodes: [...new Set(ours.map(commandProgram).filter(Boolean))] };
+}
+
+// The Node that Carwash's commands start. Install writes its path into the
+// settings, so if that Node is removed later (version managers such as nvm
+// keep one folder per version), nothing of Carwash runs, not even the part
+// that would log an error. Plain `node` (Windows) is looked up on PATH.
+function nodeRow(nodes) {
+  const missing = nodes.find((node) => /[\\/]/.test(node) && !existsSync(node));
+  if (missing) return `MISSING: ${tilde(missing)} · to fix: ${UPDATE_COMMAND}`;
+  return nodes.length ? `ok (${nodes.map(tilde).join(', ')})` : null;
 }
 
 const date = (iso) => {
@@ -100,6 +112,8 @@ export function doctorReport({ env = process.env, now = Date.now(), running, new
     } else {
       out.push(row('Status line', yes(check.statusLine)));
       out.push(row('Hooks', HOOK_EVENTS.map((event) => `${event} ${yes(check.hooks[event])}`).join(' · ')));
+      const node = nodeRow(check.nodes);
+      if (node) out.push(row('Node for Carwash', node));
     }
     out.push(row('/wash command', yes(existsSync(join(skillDir(env), 'SKILL.md')))));
     let waiting = '?';
@@ -123,6 +137,7 @@ export function doctorReport({ env = process.env, now = Date.now(), running, new
   if (!errors.length) out.push(`Errors: none logged.`);
   else out.push(`Last ${errors.length === 1 ? 'error' : `${errors.length} errors`} (from ${tilde(errorLogPath(env))}):`, '', ...errors.map((entry) => entry.replace(/^/gm, '  ')));
   out.push('', `Something wrong? Open an issue and paste everything above: ${ISSUES_URL}`);
+  out.push('Issues are public, so look it over first: error details can include folder names.');
   return out.join('\n');
 }
 

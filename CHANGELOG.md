@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.7
+
+- `carwash doctor` checks that the Node Carwash runs with is still there, and says how to fix it if not. Removing that Node, for example an old version in nvm, stops the meter and `/wash` until install is run again. The installer now says which Node that is.
+- Clearer wording on when Carwash goes online, and a reminder to look over `doctor` output before posting it in a public issue.
+
 ## 0.1.6
 
 - Update notices: once a day, a new session checks npm in the background. A line under the meter says when a newer version is out, or when the version you have carries a warning. `CARWASH_NO_UPDATE_CHECK=1` turns it off.

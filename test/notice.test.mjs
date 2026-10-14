@@ -6,6 +6,7 @@ import { Writable } from 'node:stream';
 import { test } from 'node:test';
 import { main } from '../src/cli.mjs';
 import { doctorReport, recentErrors } from '../src/install/doctor.mjs';
+import { commandFor } from '../src/install/install.mjs';
 import { fetchNotice, noticeFor, readNotice, refreshNotice, startCheck, startNotice, statusNotice, unseenErrors, versionLine } from '../src/install/notice.mjs';
 import { withNotice } from '../src/statusline/run.mjs';
 import { runHook } from '../src/wash/hooks.mjs';
@@ -128,6 +129,7 @@ test('doctor lists what a bug report needs', () => {
   assert.match(before, /Claude Code\s+not found on PATH/);
   assert.match(before, /Errors: none logged\./);
   assert.match(before, /github\.com\/Spobi\/context-carwash\/issues\/new/);
+  assert.match(before, /Issues are public, so look it over first/);
 
   writeFileSync(join(env.CARWASH_HOME, 'install.json'), JSON.stringify({ version: '0.1.5', installedAt: '2026-10-03T10:00:00Z' }));
   const after = doctorReport({ env, running: '0.1.6', newest: { latest: '0.1.6', warning: 'Bug in /wash.' }, claude: '2.1.0 (Claude Code)' });
@@ -138,6 +140,24 @@ test('doctor lists what a bug report needs', () => {
   assert.match(after, /Status line\s+MISSING/);
   assert.match(after, /Hooks\s+SessionStart MISSING · Stop MISSING · UserPromptExpansion MISSING/);
   assert.match(after, /\/wash command\s+MISSING/);
+});
+
+test('doctor notices when the Node Carwash runs with is gone', () => {
+  const env = home();
+  writeFileSync(join(env.CARWASH_HOME, 'install.json'), JSON.stringify({ version: '0.1.7' }));
+  mkdirSync(env.CLAUDE_CONFIG_DIR, { recursive: true });
+  const report = (nodePath) => {
+    const command = (verb) => commandFor(verb, { nodePath, scriptPath: '/h/.carwash/app/bin/carwash.mjs', platform: 'darwin' });
+    const hook = { hooks: [{ type: 'command', command: command('hook') }] };
+    const settings = { statusLine: { type: 'command', command: command('statusline') }, hooks: { SessionStart: [hook], Stop: [hook], UserPromptExpansion: [hook] } };
+    writeFileSync(join(env.CLAUDE_CONFIG_DIR, 'settings.json'), JSON.stringify(settings));
+    return doctorReport({ env, running: '0.1.7', newest: null, claude: null });
+  };
+  assert.match(report(process.execPath), /Node for Carwash\s+ok \(/);
+  // As after `nvm uninstall` of the version Carwash was installed with.
+  const gone = report(join(tmpdir(), 'no-such-node-version', 'bin', 'node'));
+  assert.match(gone, /Status line\s+ok/);
+  assert.match(gone, /Node for Carwash\s+MISSING: \S*no-such-node-version\S* · to fix: npx context-carwash@latest install/);
 });
 
 test('doctor keeps only the last few errors, each cut short', () => {

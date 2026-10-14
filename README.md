@@ -5,7 +5,7 @@ A small, local-first utility for Claude Code.
 - **Meter:** a quiet estimate of the active context window in the status line.
 - **Wash:** when you ask, Claude writes a short handoff brief, and your next `/clear` starts a fresh session that begins with it.
 
-Nothing happens automatically, and nothing about you is ever sent. Carwash goes online in two ways: once a day it reads its own public page on npm to see if a newer version is out (you can turn that off), and `carwash stats --share` sends anonymous totals if you run it and say yes.
+Nothing happens automatically, and nothing about you is ever sent. Carwash goes online only for these: once a day it reads its own public page on npm to see if a newer version is out (you can turn that off); `install` and `doctor` read the same page when you run them, and `install` downloads the newer version if there is one; and `carwash stats --share` sends anonymous totals if you run it and say yes.
 
 **Status:** pre-release. The meter and the typed `/wash` command work today. Clickable links in the status line and the one-step restart are not built yet. See [plan-3.md](plan-3.md) for the design.
 
@@ -29,6 +29,8 @@ The installer copies itself to `~/.carwash/app` and makes three changes to Claud
 - **The `/wash` command** at `~/.claude/skills/wash`.
 
 Start a new Claude Code session afterwards. The first one explains the meter and `/wash` in a short note, shown once.
+
+The status line and hooks run with the Node you installed with. If you later remove that Node, for example an old version in nvm, they stop working until you run install again. `carwash doctor` points this out.
 
 ## The meter
 
@@ -114,7 +116,7 @@ This shows every field it would send, and sends only if you say yes. It sends to
 npx context-carwash doctor
 ```
 
-This checks that the status line, hooks and `/wash` command are still in place, and shows your Carwash, Node, Claude Code and operating system versions, the newest version on npm, and the last few errors. Paste it into a [new issue](https://github.com/Spobi/context-carwash/issues/new).
+This checks that the status line, hooks and `/wash` command are still in place and that the Node they run with is still there, and shows your Carwash, Node, Claude Code and operating system versions, the newest version on npm, and the last few errors. Paste it into a [new issue](https://github.com/Spobi/context-carwash/issues/new). Issues are public, so look it over first: error details can include folder names.
 
 If a hook fails, the status line shows `Carwash hit an error` until you run `doctor`.
 

@@ -5,7 +5,7 @@ import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { applyInstall, applyUninstall, describeInstall, describeUninstall, isCarwashCommand, isCarwashHook, planInstall, planUninstall, statusLineCommand, withoutCarwashHooks } from '../src/install/install.mjs';
+import { applyInstall, applyUninstall, commandProgram, describeInstall, describeUninstall, isCarwashCommand, isCarwashHook, planInstall, planUninstall, statusLineCommand, withoutCarwashHooks } from '../src/install/install.mjs';
 import { UserError } from '../src/install/settings.mjs';
 
 const BIN = fileURLToPath(new URL('../bin/carwash.mjs', import.meta.url));
@@ -369,6 +369,21 @@ test('the command written to settings is safe for the shell that will run it', (
   }
   assert.equal(isCarwashCommand('~/.claude/statusline.sh'), false);
   assert.equal(isCarwashCommand(undefined), false);
+});
+
+test('the Node a written command runs with can be read back from it', () => {
+  for (const nodePath of ['/usr/local/bin/node', '/Users/a b/node', "/Users/a b/it's/node"]) {
+    assert.equal(commandProgram(statusLineCommand({ nodePath, scriptPath: '/h/a b/carwash.mjs', platform: 'darwin' })), nodePath);
+  }
+  assert.equal(commandProgram(statusLineCommand({ nodePath: 'C:\\n\\node.exe', scriptPath: 'C:\\Users\\John Smith\\carwash.mjs', platform: 'win32' })), 'node');
+  assert.equal(commandProgram(''), null);
+  assert.equal(commandProgram(undefined), null);
+});
+
+test('install says which Node Carwash will run with, where that is fixed', () => {
+  const { env } = sandbox();
+  assert.match(describeInstall(planInstall({ env, platform: 'darwin' })), /Carwash runs with the Node at .+\. If you remove that Node later, .* run install again\./);
+  assert.doesNotMatch(describeInstall(planInstall({ env, platform: 'win32' })), /runs with the Node/);
 });
 
 test('command line: install asks first, and the installed status line runs', () => {

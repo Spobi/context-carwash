@@ -1,9 +1,9 @@
 import { spawnSync } from 'node:child_process';
 
-// Whether a newer Context Carwash is on npm, and handing over to it. Only the
-// installer asks, since npx can quietly rerun a copy it downloaded earlier, and
-// people should not have to know to type @latest. The meter and /wash never
-// use the network.
+// Whether a newer Context Carwash is on npm, and handing over to it, for the
+// installer: npx can quietly rerun a copy it downloaded earlier, and people
+// should not have to know to type @latest. The daily check behind the update
+// notice is in notice.mjs. The meter and /wash never go online themselves.
 
 const LATEST_URL = 'https://registry.npmjs.org/context-carwash/latest';
 const TIMEOUT_MS = 3000;
