@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.0
+
+- README demo GIF and a one-line summary at the top.
+- Fixed a test that started failing 48 hours after its fixed test date.
+
 ## 0.1.9
 
 - Friendlier README wording.

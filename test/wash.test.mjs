@@ -674,8 +674,10 @@ test('the status line says when a brief is being written and when one is ready',
   start('clear');
   assert.equal(look(), null);
 
-  // End to end, under the pid Claude Code reports.
-  wash('light', { me: { pid: 424_242, start: null }, prompt: 'P2' });
+  // End to end, under the pid Claude Code reports. The status line reads the
+  // real clock, so this brief is written now rather than at NOW, or it would
+  // have expired 48 hours after NOW.
+  wash('light', { me: { pid: 424_242, start: null }, prompt: 'P2', now: Date.now() });
   const line = await statusline({ input: JSON.stringify(payload), env: { ...env, CLAUDE_PID: '424242', TERM_PROGRAM: 'xterm', NO_COLOR: '1' } });
   assert.equal(line, 'session context ~136k  [██████████░░░░░]  Brief ready ✓ light ~61 · type /clear to start fresh with it. Old session stays in /resume.');
 });

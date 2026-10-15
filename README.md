@@ -1,5 +1,9 @@
 # Context Carwash
 
+*Long Claude Code sessions get slow and forgetful. Run it through the wash: keep what matters, drop the rest, start fresh.*
+
+![The meter fills up, /wash writes a short brief, and after /clear a fresh session picks up where the old one stopped](docs/demo.gif)
+
 Context Carwash adds a line to Claude Code in your terminal that:
 
 1. **The Meter:** shows the current conversation's context size.
