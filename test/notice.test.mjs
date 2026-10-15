@@ -16,7 +16,7 @@ const DAY = 86_400_000;
 
 function home() {
   const root = mkdtempSync(join(tmpdir(), 'carwash-notice-'));
-  const env = { CARWASH_HOME: join(root, 'carwash'), CLAUDE_CONFIG_DIR: join(root, 'claude'), COLUMNS: '200' };
+  const env = { CARWASH_HOME: join(root, 'carwash'), CLAUDE_CONFIG_DIR: join(root, 'claude'), CODEX_HOME: join(root, 'codex'), COLUMNS: '200' };
   mkdirSync(env.CARWASH_HOME, { recursive: true });
   return env;
 }

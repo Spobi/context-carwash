@@ -1,6 +1,6 @@
 # Context Carwash
 
-*Long Claude Code sessions get slow and forgetful. Run it through the wash: keep what matters, drop the rest, start fresh.*
+*Long Claude Code and Codex sessions get slow and forgetful. Run it through the wash: keep what matters, drop the rest, start fresh.*
 
 ![The meter fills up, /wash writes a short brief, and after /clear a fresh session picks up where the old one stopped](docs/demo.gif)
 
@@ -8,6 +8,8 @@ Context Carwash adds a line to Claude Code in your terminal that:
 
 1. **The Meter:** shows the current conversation's context size.
 2. **/wash:** lets you compress your context and start a new session without losing important details.
+
+It works in Codex too: see [Codex](#codex).
 
 Pretty simple app, but I've found it helpful. Everything is local, but you can share your token savings anonymously with me if you'd like with `npx context-carwash stats --share`.
 
@@ -19,11 +21,11 @@ You'll need Node 18 or later.
 npx context-carwash install
 ```
 
-It shows you what it's going to change and asks before doing anything. Then start a new Claude Code session and you're set.
+It shows you what it's going to change and asks before doing anything. Then start a new Claude Code session and you're set. If you use Codex as well, it sets that up in the same go.
 
 When there's a new version, a line under the meter will tell you. To update, run `npx context-carwash@latest install`.
 
-Under the hood, it adds a status line and three hooks to `~/.claude/settings.json` (after whatever you already have there) and a `/wash` command in `~/.claude/skills/wash`.
+Under the hood, it adds a status line and three hooks to `~/.claude/settings.json` (after whatever you already have there) and a `/wash` command in `~/.claude/skills/wash`. For Codex, it adds three hooks to `~/.codex/hooks.json` and a `$wash` command in `~/.codex/skills/wash`.
 
 ## The Meter
 
@@ -60,6 +62,17 @@ A few things worth knowing:
 - Closed the terminal before you got to `/clear`? Run `claude` in the same folder and your brief loads. If there's more than one waiting, it'll list them so you can pick with `/wash load <id>`.
 - Briefs expire after 48 hours.
 
+## Codex
+
+If you have Codex, `install` sets it up too. It works the same way, with a few differences:
+
+- The command is `$wash` (Codex keeps `/` for its own commands). Same options: `$wash light`, `$wash discard`, `$wash help` and so on.
+- Codex asks you to approve new hooks before it runs them. The first time you start Codex after installing, choose **Trust all and continue**.
+- After `/clear`, send your next message (even just "continue"). The brief loads with it, because that's when Codex starts the new session.
+- There's no meter. Codex's status line can only show its own items.
+- A brief written in Claude Code isn't picked up by Codex on its own, and the other way round. To use one anyway, run `$wash load <id>` (or `/wash load <id>`).
+- `codex exec` runs never use up a brief.
+
 ## Stats
 
 ```sh
@@ -77,7 +90,7 @@ Carwash stats, since 3 Oct 2026 (12 days)
   Net saved                   ~20M tokens
 ```
 
-Every request to Claude sends the whole conversation again. After a wash, each request starts from the small brief instead, so Carwash counts the requests you actually made and adds up the difference. Claude charges about a tenth of the price for repeated context, so in dollars you're saving roughly a tenth of these numbers. You can also see this inside Claude Code with `/wash stats`.
+Every request to Claude or Codex sends the whole conversation again. After a wash, each request starts from the small brief instead, so Carwash counts the requests you actually made and adds up the difference. Repeated context is charged at about a tenth of the price, so in dollars you're saving roughly a tenth of these numbers. You can also see this inside Claude Code with `/wash stats`.
 
 If you run `stats --share`, it shows you exactly what it would send before asking.
 
@@ -99,11 +112,11 @@ Your briefs, stats and error logs live in `~/.carwash`, and only you can read th
 npx context-carwash uninstall
 ```
 
-This puts `settings.json` back exactly as it was. If you've edited the file since installing, it only removes Carwash's status line and hooks and leaves your changes alone. It also removes the `/wash` command and deletes `~/.carwash`, including any waiting briefs and your stats.
+This puts `settings.json` back exactly as it was. If you've edited the file since installing, it only removes Carwash's status line and hooks and leaves your changes alone. Codex's `hooks.json` gets the same treatment. It also removes the `/wash` and `$wash` commands and deletes `~/.carwash`, including any waiting briefs and your stats.
 
 ## Platforms
 
-Built and tested on macOS. Automated tests also run on Linux and Windows, but I haven't tried those by hand yet.
+Built and tested on macOS, with Claude Code and with Codex. Automated tests also run on Linux and Windows, but I haven't tried those by hand yet.
 
 ## License
 

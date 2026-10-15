@@ -6,6 +6,7 @@ import { readJson } from '../files.mjs';
 import { errorLogPath, errorsSeenPath, installRecordPath, settingsPath, skillDir } from '../paths.mjs';
 import { refreshLedger, totals } from '../stats/ledger.mjs';
 import { readyRecords } from '../wash/store.mjs';
+import { codexDetected, codexHooksCheck, codexSkillInstalled } from './codex.mjs';
 import { commandProgram, isCarwashCommand, isCarwashHook } from './install.mjs';
 import { UPDATE_COMMAND } from './notice.mjs';
 import { readSettings, resolveSettingsFile } from './settings.mjs';
@@ -32,6 +33,21 @@ export function claudeVersion({ env = process.env, platform = process.platform }
     return null;
   }
 }
+
+// Codex's own version, or null if `codex` is not on PATH.
+export function codexVersion({ env = process.env, platform = process.platform } = {}) {
+  try {
+    const result = spawnSync('codex', ['--version'], { env, encoding: 'utf8', timeout: 5000, shell: platform === 'win32', windowsHide: true });
+    const out = (result.stdout ?? '').trim();
+    return result.status === 0 && out ? out.split('\n')[0] : null;
+  } catch {
+    return null;
+  }
+}
+
+// Whether doctor has anything to say about Codex: it is set up here, or an
+// install covered it.
+export const codexInScope = (env = process.env, record = readJson(installRecordPath(env))) => Boolean(record?.codex) || codexDetected(env);
 
 // The last few entries of the error log, newest last. Each entry starts with
 // the time it was written; a stack trace follows on the next lines.
@@ -81,8 +97,9 @@ const date = (iso) => {
 
 // `running` is this copy's version, which under npx may differ from the copy
 // installed in ~/.carwash/app. `newest` is what npm said just now: { latest,
-// warning } or null.
-export function doctorReport({ env = process.env, now = Date.now(), running, newest, claude, platform = process.platform }) {
+// warning } or null. `claude` and `codex` are the tools' versions, or null;
+// `codex` is only asked for when Codex is in scope.
+export function doctorReport({ env = process.env, now = Date.now(), running, newest, claude, codex = null, platform = process.platform }) {
   const row = (label, value) => `  ${label.padEnd(18)}${value}`;
   const record = readJson(installRecordPath(env));
   const installed = typeof record?.version === 'string' ? record.version : null;
@@ -103,19 +120,43 @@ export function doctorReport({ env = process.env, now = Date.now(), running, new
   out.push(row('Node', process.version));
   out.push(row('System', `${platform} ${release()} ${arch()}`));
   out.push(row('Claude Code', claude ?? 'not found on PATH'));
+  const withCodex = codexInScope(env, record);
+  if (withCodex) out.push(row('Codex', codex ?? 'not found on PATH'));
 
   if (installed) {
-    const check = settingsCheck(env);
     const yes = (ok) => (ok ? 'ok' : 'MISSING');
-    if (!check.readable) {
-      out.push(row('Settings', `could not read ${tilde(settingsPath(env))}`));
-    } else {
-      out.push(row('Status line', yes(check.statusLine)));
-      out.push(row('Hooks', HOOK_EVENTS.map((event) => `${event} ${yes(check.hooks[event])}`).join(' · ')));
-      const node = nodeRow(check.nodes);
-      if (node) out.push(row('Node for Carwash', node));
+    // Installs from before Codex support do not list their tools: Claude Code.
+    const tools = Array.isArray(record.tools) ? record.tools : ['claude'];
+    const nodes = [];
+    if (tools.includes('claude')) {
+      const check = settingsCheck(env);
+      if (!check.readable) {
+        out.push(row('Settings', `could not read ${tilde(settingsPath(env))}`));
+      } else {
+        out.push(row('Status line', yes(check.statusLine)));
+        out.push(row('Hooks', HOOK_EVENTS.map((event) => `${event} ${yes(check.hooks[event])}`).join(' · ')));
+        nodes.push(...check.nodes);
+      }
+      out.push(row('/wash command', yes(existsSync(join(skillDir(env), 'SKILL.md')))));
     }
-    out.push(row('/wash command', yes(existsSync(join(skillDir(env), 'SKILL.md')))));
+    if (tools.includes('codex')) {
+      const check = codexHooksCheck(env);
+      if (!check.readable) {
+        out.push(row('Codex hooks', `could not read ${tilde(check.file)}`));
+      } else {
+        const events = Object.keys(check.hooks);
+        out.push(row('Codex hooks', events.map((event) => `${event} ${yes(check.hooks[event])}`).join(' · ')));
+        const present = events.filter((event) => check.hooks[event]);
+        if (present.length) {
+          const trusted = present.every((event) => check.trusted[event]);
+          out.push(row('Codex trust', trusted ? 'ok' : 'not yet: start Codex and choose "Trust all and continue" when it asks about new hooks'));
+        }
+        nodes.push(...check.nodes.map(commandProgram).filter(Boolean));
+      }
+      out.push(row('$wash command', yes(codexSkillInstalled(env))));
+    }
+    const node = nodeRow([...new Set(nodes)]);
+    if (node) out.push(row('Node for Carwash', node));
     let waiting = '?';
     let written = '?';
     try {

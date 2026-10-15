@@ -1,7 +1,7 @@
 import { appendFileSync, existsSync, statSync, writeFileSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { applyInstall, applyUninstall, describeInstall, describeUninstall, packageVersion, planInstall, planUninstall } from './install/install.mjs';
-import { claudeVersion, doctorReport, markErrorsSeen } from './install/doctor.mjs';
+import { claudeVersion, codexInScope, codexVersion, doctorReport, markErrorsSeen } from './install/doctor.mjs';
 import { fetchNotice, refreshNotice, startCheck } from './install/notice.mjs';
 import { UserError } from './install/settings.mjs';
 import { isNewer, latestVersion, runRelease } from './install/update.mjs';
@@ -13,11 +13,11 @@ import { render } from './statusline/render.mjs';
 import { statusline } from './statusline/run.mjs';
 import { runHook } from './wash/hooks.mjs';
 
-const HELP = `Context Carwash: a quiet context meter and a deliberate fresh start for Claude Code.
+const HELP = `Context Carwash: a quiet context meter and a deliberate fresh start for Claude Code and Codex.
 
 Usage: carwash <command>
 
-  install [--yes]     Add the context meter and the /wash command to Claude Code
+  install [--yes]     Add the context meter and /wash to Claude Code, and $wash to Codex if you have it
   uninstall [--yes]   Undo everything install did
   preview             Print sample meters in this terminal
   stats [--share]     Show how much context /wash has saved; --share sends the totals anonymously, after asking
@@ -32,6 +32,9 @@ Inside Claude Code, once installed:
   /wash load [id]                  Make a waiting brief the one /clear will use
   /wash stats                      The same totals as carwash stats
   /wash help                       Explain the meter and the options
+
+In Codex it is $wash, with the same options. After /clear, the brief loads
+with the first message you send. Codex has no meter.
 
 Nothing happens automatically, and nothing about you is ever sent. Once a day a
 new session reads Carwash's public page on npm for the newest version and any
@@ -99,7 +102,16 @@ function logError(env, error) {
   }
 }
 
-export async function main(argv, { env = process.env, stdin = process.stdin, stdout = process.stdout, stderr = process.stderr, latest = latestVersion, handOff = runRelease, form = FORM, share = sendShare, notice = fetchNotice, claude = claudeVersion, check = startCheck } = {}) {
+// What to do next, after an install, for each tool it covered.
+function installedMessage(plan, env) {
+  const welcome = existsSync(welcomedPath(env, 'claude')) ? '' : ' Its first message explains them.';
+  const codex = 'choose "Trust all and continue" when it asks about new hooks. Then type $wash when you want a fresh start.';
+  if (!plan.codex) return `Installed. Start a new Claude Code session to get the meter and /wash.${welcome}`;
+  if (!plan.claude) return `Installed. Start Codex and ${codex}`;
+  return ['Installed.', `  Claude Code: start a new session to get the meter and /wash.${welcome}`, `  Codex: start a new session and ${codex}`].join('\n');
+}
+
+export async function main(argv, { env = process.env, stdin = process.stdin, stdout = process.stdout, stderr = process.stderr, latest = latestVersion, handOff = runRelease, form = FORM, share = sendShare, notice = fetchNotice, claude = claudeVersion, codex = codexVersion, check = startCheck } = {}) {
   const [command, ...rest] = argv;
   const yes = rest.includes('--yes') || rest.includes('-y');
   try {
@@ -111,7 +123,8 @@ export async function main(argv, { env = process.env, stdin = process.stdin, std
         let output = null;
         try {
           const version = packageVersion();
-          output = runHook({ input: await readAll(stdin), env, version, onError: (error) => logError(env, error), checkUpdates: () => check(version, { env }) });
+          // `carwash hook` is Claude Code's; Codex's hooks run `carwash hook codex`.
+          output = runHook({ input: await readAll(stdin), tool: rest[0] ?? 'claude', env, version, onError: (error) => logError(env, error), checkUpdates: () => check(version, { env }) });
         } catch (error) {
           logError(env, error);
         }
@@ -141,8 +154,7 @@ export async function main(argv, { env = process.env, stdin = process.stdin, std
         applyInstall(plan);
         // Errors from before this install are not news.
         markErrorsSeen(env);
-        const welcome = existsSync(welcomedPath(env)) ? '' : ' Its first message explains them.';
-        stdout.write(`Installed. Start a new Claude Code session to get the meter and /wash.${welcome}\n`);
+        stdout.write(`${installedMessage(plan, env)}\n`);
         return 0;
       }
       case 'uninstall': {
@@ -189,7 +201,7 @@ export async function main(argv, { env = process.env, stdin = process.stdin, std
         const running = packageVersion();
         const installed = readJson(installRecordPath(env))?.version;
         const newest = await notice(typeof installed === 'string' ? installed : running, { env });
-        stdout.write(doctorReport({ env, running, newest, claude: claude({ env }) }) + '\n');
+        stdout.write(doctorReport({ env, running, newest, claude: claude({ env }), codex: codexInScope(env) ? codex({ env }) : null }) + '\n');
         markErrorsSeen(env);
         return 0;
       }

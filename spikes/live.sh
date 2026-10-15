@@ -15,7 +15,9 @@ mkdir -p "$proj"
 [ -d "$proj/.git" ] || git -C "$proj" init -q -b main
 
 # Reinstall every time, so the sandbox always runs the current working tree.
-CARWASH_HOME="$sandbox/home" CLAUDE_CONFIG_DIR="$sandbox/config" \
+# CODEX_HOME points at a folder that is not there, so install leaves the real
+# ~/.codex alone.
+CARWASH_HOME="$sandbox/home" CLAUDE_CONFIG_DIR="$sandbox/config" CODEX_HOME="$sandbox/no-codex" \
   node "$here/../bin/carwash.mjs" install --yes > "$sandbox/install.log"
 
 # --settings carries the hooks and the status line but not skills, so /wash
@@ -25,10 +27,12 @@ cp "$sandbox/config/skills/wash/SKILL.md" "$proj/.claude/skills/wash/SKILL.md"
 
 cd "$proj"
 # Drop the variables a parent Claude Code session exports, so the run behaves
-# like a session started from a plain shell.
+# like a session started from a plain shell. Only project and local settings
+# are read, so a Carwash installed in the user's own settings does not run
+# beside this one.
 exec env \
   -u CLAUDECODE -u CLAUDE_CODE_CHILD_SESSION -u CLAUDE_CODE_SESSION_ID -u CLAUDE_PID \
   -u CLAUDE_CODE_MESSAGING_SOCKET -u CLAUDE_CODE_MESSAGING_TOKEN -u CLAUDE_CODE_ENTRYPOINT \
   -u CLAUDE_CODE_SESSION_ATTENDED -u CLAUDE_EFFORT -u CLAUDE_CODE_EXECPATH \
   CARWASH_HOME="$sandbox/home" \
-  ${CARWASH_SPIKE_CLAUDE:-claude} --settings "$sandbox/config/settings.json" "$@"
+  ${CARWASH_SPIKE_CLAUDE:-claude} --setting-sources project,local --settings "$sandbox/config/settings.json" "$@"

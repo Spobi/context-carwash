@@ -15,7 +15,9 @@ const posix = process.platform !== 'win32';
 function sandbox(settingsText) {
   const root = mkdtempSync(join(tmpdir(), 'carwash-test-'));
   // CARWASH_NO_UPDATE_CHECK keeps the installer offline; the check has its own tests.
-  const env = { ...process.env, CARWASH_HOME: join(root, 'carwash'), CLAUDE_CONFIG_DIR: join(root, 'claude'), CARWASH_NO_UPDATE_CHECK: '1' };
+  // CODEX_HOME points at a folder that is not there, so Codex is not detected
+  // and the real one is never touched; the Codex tests make it.
+  const env = { ...process.env, CARWASH_HOME: join(root, 'carwash'), CLAUDE_CONFIG_DIR: join(root, 'claude'), CODEX_HOME: join(root, 'codex'), CARWASH_NO_UPDATE_CHECK: '1' };
   for (const key of ['COLUMNS', 'LINES', 'FORCE_HYPERLINK', 'TMUX', 'STY']) delete env[key];
   const file = join(env.CLAUDE_CONFIG_DIR, 'settings.json');
   mkdirSync(env.CLAUDE_CONFIG_DIR, { recursive: true });

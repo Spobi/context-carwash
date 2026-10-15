@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { writeFileAtomic } from '../files.mjs';
 import { shareIdPath } from '../paths.mjs';
 import { formatTokens } from '../statusline/render.mjs';
+import { toolInfo } from '../tools.mjs';
 
 // `carwash stats` and `/wash stats`: the ledger's totals in words, and the
 // anonymous share that `carwash stats --share` sends after asking.
@@ -10,6 +11,9 @@ import { formatTokens } from '../statusline/render.mjs';
 const LEVEL_ORDER = ['light', 'mid', 'detailed'];
 
 const tokens = (n) => `~${formatTokens(n)} tokens`;
+
+// Who the requests went to: Claude, Codex, or both.
+const modelName = (tools = ['claude']) => (tools.length === 1 ? toolInfo(tools[0]).model : 'the model');
 
 export function statsReport(sum, { inClaude = false } = {}) {
   if (!sum.washes) {
@@ -19,18 +23,21 @@ export function statsReport(sum, { inClaude = false } = {}) {
   const levels = LEVEL_ORDER.filter((name) => sum.levels[name]).map((name) => `${name} ${sum.levels[name]}`).join(' · ');
   const net = sum.notResent - sum.briefCost;
   const row = (label, value) => `  ${label.padEnd(28)}${value}`;
+  const model = modelName(sum.tools);
   return [
     `Carwash stats, since ${since} (${sum.days} day${sum.days === 1 ? '' : 's'})`,
     '',
     row('Briefs written', `${sum.washes}${levels ? `  (${levels})` : ''}`),
     row('Started fresh with one', `${sum.delivered}`),
-    row('Prompts in fresh sessions', `${sum.prompts}  (${sum.requests} requests to Claude)`),
+    row('Prompts in fresh sessions', `${sum.prompts}  (${sum.requests} requests to ${model})`),
     row('Context not re-sent', tokens(sum.notResent)),
     row('Spent writing briefs', tokens(sum.briefCost)),
     row(net >= 0 ? 'Net saved' : 'Net cost so far', tokens(Math.abs(net))),
     '',
-    'How it is worked out: every request to Claude carries the whole conversation. After a wash, each request in the fresh session starts from the brief instead of the old conversation, and the difference is context that was not sent again. Counting stops where the old session would have compacted on its own.',
-    'Claude caches repeated context and charges about a tenth for it, so in money terms the saving is roughly a tenth of these numbers.',
+    `How it is worked out: every request to ${model} carries the whole conversation. After a wash, each request in the fresh session starts from the brief instead of the old conversation, and the difference is context that was not sent again. Counting stops where the old session would have compacted on its own.`,
+    model === 'Claude'
+      ? 'Claude caches repeated context and charges about a tenth for it, so in money terms the saving is roughly a tenth of these numbers.'
+      : 'Repeated context is cached and charged at about a tenth, so in money terms the saving is roughly a tenth of these numbers.',
     '',
     inClaude ? 'To share these totals anonymously, run in a terminal: npx context-carwash stats --share' : 'To share these totals anonymously: npx context-carwash stats --share',
   ].join('\n');

@@ -49,7 +49,7 @@ test('offline, failing or odd answers from npm are no answer', async () => {
 
 test('an out-of-date installer hands over to the newest release, once', async () => {
   const root = mkdtempSync(join(tmpdir(), 'carwash-update-'));
-  const base = { ...process.env, CARWASH_HOME: join(root, 'carwash'), CLAUDE_CONFIG_DIR: join(root, 'claude') };
+  const base = { ...process.env, CARWASH_HOME: join(root, 'carwash'), CLAUDE_CONFIG_DIR: join(root, 'claude'), CODEX_HOME: join(root, 'codex') };
   delete base.CARWASH_HANDED_OFF;
   const sink = () => {
     const stream = new Writable({ write: (chunk, _enc, done) => ((stream.text += chunk), done()) });

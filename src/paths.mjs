@@ -11,6 +11,11 @@ export function claudeConfigDir(env = process.env) {
   return env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude');
 }
 
+// Codex's own home directory, honouring its documented override.
+export function codexHome(env = process.env) {
+  return env.CODEX_HOME || join(homedir(), '.codex');
+}
+
 export function settingsPath(env = process.env) {
   return join(claudeConfigDir(env), 'settings.json');
 }
@@ -43,9 +48,15 @@ export const errorsSeenPath = (env = process.env) => join(carwashHome(env), 'err
 // the author put on this one.
 export const noticePath = (env = process.env) => join(carwashHome(env), 'notice.json');
 
-// Present once the first-run welcome has been shown.
-export const welcomedPath = (env = process.env) => join(carwashHome(env), 'welcomed');
+// Present once the first-run welcome has been shown. Each tool says hello once.
+export const welcomedPath = (env = process.env, tool = 'claude') => join(carwashHome(env), tool === 'claude' ? 'welcomed' : `welcomed-${tool}`);
 
 // Where the /wash command is installed.
 export const skillDir = (env = process.env) => join(claudeConfigDir(env), 'skills', 'wash');
 export const legacyCommandPath = (env = process.env) => join(claudeConfigDir(env), 'commands', 'wash.md');
+
+// Where Carwash goes in Codex: its hooks file, the $wash skill, and the config
+// file Codex keeps hook approvals in (read, never written).
+export const codexHooksPath = (env = process.env) => join(codexHome(env), 'hooks.json');
+export const codexSkillDir = (env = process.env) => join(codexHome(env), 'skills', 'wash');
+export const codexConfigPath = (env = process.env) => join(codexHome(env), 'config.toml');

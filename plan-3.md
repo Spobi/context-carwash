@@ -274,3 +274,16 @@ Decided by the user after reviewing what a newcomer could not work out from the 
 - **Hook errors are visible:** a line under the meter says `Carwash hit an error` when `errors.log` is newer than `errors-seen`. `doctor` and install touch `errors-seen`.
 - **`carwash doctor`:** prints versions (Carwash installed and running, newest on npm, Node, OS, Claude Code), whether the status line, the three hooks and the skill are in place, the brief counts, and the last three errors, for pasting into an issue.
 - **One notice line at most, in this order:** the author's warning, then hook errors, then a newer version.
+
+### Codex support (2026-10-15)
+
+Decided by the user: make Carwash work in other terminal coding tools, hooks-based only (no hookless fallback), with extra care not to change anything for Claude Code. Verified findings are in `spikes/CODEX-FINDINGS.md`.
+
+- **Codex only, for now.** Gemini CLI stopped serving individual accounts (free, Pro, Ultra) on 2026-06-18; only paid API keys and enterprise licences remain. Its replacement, Antigravity CLI, is closed source and has no session-start hook, which the handoff needs. The code keeps tool-specific wording in `src/tools.mjs` and per-tool install in its own module, so another tool can be added the same way.
+- **Install detects and includes.** One `install`, one confirmation. Codex is included when `$CODEX_HOME` (default `~/.codex`) exists. Claude Code is included when its config folder exists, when an earlier install covered it, or when Codex is not there (the old behaviour). The install record lists `tools` and a `codex` section only when Codex is involved, so a Claude Code install records exactly what it did before.
+- **Where it goes in Codex:** three hooks in `~/.codex/hooks.json` (`SessionStart` for `startup|clear` with `additionalContextLimit: 0` so a brief is never cut to a preview, `UserPromptSubmit`, `Stop`), running `carwash.mjs hook codex`, and the skill at `~/.codex/skills/wash` with `allow_implicit_invocation: false`. `config.toml` is never written. Codex asks the user to trust new hooks once ("Trust all and continue"); install says so, and doctor reads the approvals from `config.toml`.
+- **`$wash`, not `/wash`:** Codex rejects unknown slash commands before any hook sees them, and skills are mentioned with `$`. `UserPromptSubmit` runs for every prompt (Codex ignores its matcher), so anything not starting with `$wash` returns at once without touching files or processes.
+- **The brief loads with the first message after `/clear`:** Codex fires `SessionStart` lazily, when the new session's first prompt is submitted. All Codex wording says to send a message after `/clear`.
+- **No meter in Codex:** its status line only shows built-in items. The size limit for a brief comes from the last `token_count` reading in the session file instead.
+- **One tool's brief is not picked up by the other** when a session starts. `load <id>` works across tools. Briefs from Claude Code carry no `tool` field, as before.
+- **Scripted runs:** `codex exec` and `codex review` never use up a brief, judged from the Codex process's command line.

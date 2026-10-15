@@ -3,7 +3,8 @@ import { homedir } from 'node:os';
 import { delimiter, dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { privateDir, readJson, writeFileAtomic } from '../files.mjs';
-import { carwashHome, installRecordPath, legacyCommandPath, pendingDir, settingsPath, skillDir } from '../paths.mjs';
+import { carwashHome, claudeConfigDir, installRecordPath, legacyCommandPath, pendingDir, settingsPath, skillDir } from '../paths.mjs';
+import { applyCodexInstall, applyCodexUninstall, codexDetected, describeCodexInstall, describeCodexUninstall, planCodexInstall, planCodexUninstall } from './codex.mjs';
 import { UserError, readSettings, resolveSettingsFile, serializeSettings, sha256 } from './settings.mjs';
 
 const PACKAGE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -85,8 +86,9 @@ export const isCarwashHook = runsCarwash('hook');
 
 // The `hooks` setting with Carwash's own entries taken out. An event's list,
 // or the whole setting, goes too if it only existed to hold ours. Returns the
-// same object when there was nothing of ours in it.
-export function withoutCarwashHooks(hooks) {
+// same object when there was nothing of ours in it. `isOurs` tells our hook
+// commands apart; Codex's hooks file has the same shape as Claude Code's.
+export function withoutCarwashHooks(hooks, isOurs = isCarwashHook) {
   if (!isPlainObject(hooks)) return hooks;
   const next = {};
   let found = false;
@@ -97,13 +99,13 @@ export function withoutCarwashHooks(hooks) {
     }
     const kept = [];
     for (const group of groups) {
-      const ours = Array.isArray(group?.hooks) && group.hooks.some((hook) => isCarwashHook(hook?.command));
+      const ours = Array.isArray(group?.hooks) && group.hooks.some((hook) => isOurs(hook?.command));
       if (!ours) {
         kept.push(group);
         continue;
       }
       found = true;
-      const theirs = group.hooks.filter((hook) => !isCarwashHook(hook?.command));
+      const theirs = group.hooks.filter((hook) => !isOurs(hook?.command));
       if (theirs.length) kept.push({ ...group, hooks: theirs });
     }
     if (kept.length || kept.length === groups.length) next[event] = kept;
@@ -155,13 +157,38 @@ function copyTree(from, to) {
   }
 }
 
+// Whether an install record covers Claude Code. Records from before Codex
+// support do not list their tools, and were all Claude Code.
+const claudeRecorded = (record) => Boolean(record) && (!Array.isArray(record.tools) || record.tools.includes('claude'));
+
+// Which tools an install covers. Codex when it is set up here. Claude Code when
+// it is set up here or was installed before, and always when Codex is not
+// there: that was the whole install before Codex support.
+export function detectTools(env = process.env, record = readJson(installRecordPath(env))) {
+  const codex = codexDetected(env);
+  const claude = existsSync(claudeConfigDir(env)) || claudeRecorded(record) || !codex;
+  return { claude, codex };
+}
+
 // Work out what installing would change, without changing anything.
 export function planInstall({ env = process.env, platform = process.platform } = {}) {
   const home = carwashHome(env);
   const appDir = join(home, 'app');
+  const record = readJson(installRecordPath(env));
+  const tools = detectTools(env, record);
+  const script = { nodePath: stableNodePath(env), scriptPath: join(appDir, 'bin', 'carwash.mjs'), platform };
+  // The Node the commands will run with. Windows finds `node` on PATH instead.
+  const node = platform === 'win32' ? null : script.nodePath;
+  const codex = tools.codex ? planCodexInstall({ env, script, previous: record?.codex ?? null }) : null;
+  if (!tools.claude) return { home, appDir, record, node, claude: false, codex };
+  return { ...planClaudeInstall({ env, record: claudeRecorded(record) ? record : null, script }), home, appDir, record, node, claude: true, codex };
+}
+
+// The Claude Code half of an install: the status line, hooks and /wash.
+// `record` is the install record when it covers Claude Code.
+function planClaudeInstall({ env, record, script }) {
   const file = resolveSettingsFile(settingsPath(env));
   const settings = readSettings(file);
-  const record = readJson(installRecordPath(env));
   const current = settings.data.statusLine;
 
   let original = null;
@@ -179,7 +206,6 @@ export function planInstall({ env = process.env, platform = process.platform } =
     }
   }
 
-  const script = { nodePath: stableNodePath(env), scriptPath: join(appDir, 'bin', 'carwash.mjs'), platform };
   const theirHooks = withoutCarwashHooks(settings.data.hooks);
   const next = {
     ...settings.data,
@@ -188,16 +214,30 @@ export function planInstall({ env = process.env, platform = process.platform } =
   };
   const skill = planSkill(env);
 
-  // The Node the commands will run with. Windows finds `node` on PATH instead.
-  const node = platform === 'win32' ? null : script.nodePath;
-
-  return { home, appDir, file, settings, record, original, alreadyInstalled, next, skill, node, keepsHooks: isPlainObject(theirHooks) && Object.keys(theirHooks).length > 0 };
+  return { file, settings, claudeRecord: record, original, alreadyInstalled, next, skill, keepsHooks: isPlainObject(theirHooks) && Object.keys(theirHooks).length > 0 };
 }
 
 export function describeInstall(plan) {
   const lines = ['Context Carwash will make these changes:', ''];
   lines.push(`  1. Copy its files to ${tilde(plan.appDir)}`);
-  lines.push(`  2. ${plan.settings.exists ? 'Edit' : 'Create'} ${tilde(plan.file)}`);
+  if (plan.claude) lines.push(...describeClaudeInstall(plan));
+  if (plan.codex) lines.push(...describeCodexInstall(plan.codex, plan.claude ? 4 : 2, plan.home));
+  const model = plan.claude && plan.codex ? 'Claude or Codex' : plan.codex ? 'Codex' : 'Claude';
+  lines.push('', `Writing a brief is an ordinary ${model} reply, so it uses tokens like any other.`);
+  // Version managers such as nvm keep a folder per Node version, so removing
+  // an old version takes this path with it, and nothing of Carwash can start.
+  if (plan.node) lines.push(`Carwash runs with the Node at ${tilde(plan.node)}. If you remove that Node later, for example an old version in nvm, run install again.`);
+  lines.push('Nothing else is touched. To undo everything: carwash uninstall');
+  return lines.join('\n');
+}
+
+// Steps 2 and 3: Claude Code. Labelled with its name only when Codex is in the
+// list too.
+function describeClaudeInstall(plan) {
+  const lines = [];
+  const label = plan.codex ? 'Claude Code: ' : '';
+  const verb = plan.settings.exists ? 'Edit' : 'Create';
+  lines.push(`  2. ${label}${label ? verb.toLowerCase() : verb} ${tilde(plan.file)}`);
   if (plan.alreadyInstalled) {
     lines.push('       The Carwash status line is already there; its command is refreshed.');
   } else if (plan.original) {
@@ -210,20 +250,15 @@ export function describeInstall(plan) {
   }
   lines.push('       Adds three hooks, so /wash can save a brief and a fresh session can');
   lines.push(`       pick it up.${plan.keepsHooks ? ' The hooks you already have are kept as they are.' : ''}`);
-  if (plan.settings.exists && !plan.record) {
+  if (plan.settings.exists && !plan.claudeRecord) {
     lines.push(`       A backup of the file is kept in ${tilde(join(plan.home, 'backup'))}`);
   }
-  lines.push(`  3. Add the /wash command at ${tilde(plan.skill.dir)}`);
-  lines.push('', 'Writing a brief is an ordinary Claude reply, so it uses tokens like any other.');
-  // Version managers such as nvm keep a folder per Node version, so removing
-  // an old version takes this path with it, and nothing of Carwash can start.
-  if (plan.node) lines.push(`Carwash runs with the Node at ${tilde(plan.node)}. If you remove that Node later, for example an old version in nvm, run install again.`);
-  lines.push('Nothing else is touched. To undo everything: carwash uninstall');
-  return lines.join('\n');
+  lines.push(`  3. ${label ? `${label}add` : 'Add'} the /wash command at ${tilde(plan.skill.dir)}`);
+  return lines;
 }
 
 export function applyInstall(plan) {
-  const { home, appDir, file, settings, record, skill } = plan;
+  const { home, appDir, record } = plan;
   privateDir(home);
 
   // Self-contained copy, so the status line keeps working if the package that
@@ -236,6 +271,20 @@ export function applyInstall(plan) {
     }
   }
 
+  const tools = [...(plan.claude ? ['claude'] : []), ...(plan.codex ? ['codex'] : [])];
+  const codex = plan.codex ? applyCodexInstall(plan.codex, home) : null;
+  const base = { version: packageVersion(), installedAt: record?.installedAt ?? new Date().toISOString() };
+  // Only the tools other than Claude Code are listed, so a Claude Code install
+  // records exactly what it did before Codex support.
+  const extra = { ...(tools.length === 1 && tools[0] === 'claude' ? {} : { tools }), ...(codex ? { codex } : {}) };
+  const nextRecord = plan.claude ? { ...base, ...applyClaudeInstall(plan), ...extra } : { ...base, ...extra };
+  writeFileSync(installRecordPath({ CARWASH_HOME: home }), JSON.stringify(nextRecord, null, 2) + '\n', { mode: 0o600 });
+  return nextRecord;
+}
+
+// Write the Claude Code half, and return what the install record keeps about it.
+function applyClaudeInstall(plan) {
+  const { home, file, settings, claudeRecord: record, skill } = plan;
   mkdirSync(skill.dir, { recursive: true });
   copyFileSync(SKILL_SOURCE, skill.file);
 
@@ -255,9 +304,7 @@ export function applyInstall(plan) {
   // promise is off for good and uninstall edits our own keys instead.
   const pristine = !record || (settings.exists && record.installedSha256 === sha256(settings.bytes));
 
-  const nextRecord = {
-    version: packageVersion(),
-    installedAt: record?.installedAt ?? new Date().toISOString(),
+  return {
     settingsPath: file,
     hadSettingsFile: record ? record.hadSettingsFile : settings.exists,
     backupPath,
@@ -266,8 +313,6 @@ export function applyInstall(plan) {
     statusLine: { original: plan.original },
     skillPath: skill.file,
   };
-  writeFileSync(installRecordPath({ CARWASH_HOME: home }), JSON.stringify(nextRecord, null, 2) + '\n', { mode: 0o600 });
-  return nextRecord;
 }
 
 function countBriefs(env) {
@@ -281,9 +326,13 @@ function countBriefs(env) {
 // Work out what uninstalling would change, without changing anything.
 export function planUninstall({ env = process.env } = {}) {
   const home = carwashHome(env);
-  const record = readJson(installRecordPath(env));
+  const installRecord = readJson(installRecordPath(env));
+  // What install noted about Claude Code. An install for Codex alone has
+  // nothing to say about it, so Claude Code's settings are only checked for
+  // Carwash entries, as without a record.
+  const record = claudeRecorded(installRecord) ? installRecord : null;
   const file = resolveSettingsFile(record?.settingsPath ?? settingsPath(env));
-  const plan = { home, file, record, action: 'none', note: null, bytes: null };
+  const plan = { home, file, record: installRecord, action: 'none', note: null, bytes: null };
 
   if (existsSync(file)) {
     const current = readFileSync(file);
@@ -325,6 +374,12 @@ export function planUninstall({ env = process.env } = {}) {
   plan.skillDir = dirname(skillFile);
   plan.skill = isOurSkill(skillFile) ? skillFile : null;
   plan.foreignSkill = !plan.skill && existsSync(skillFile);
+  // Claude Code is in the list unless install never touched it and there is
+  // nothing of Carwash's there now.
+  plan.claude = Boolean(record) || !installRecord || plan.action !== 'none' || Boolean(plan.skill);
+
+  plan.codex = planCodexUninstall({ env, record: installRecord?.codex ?? null });
+  if (!plan.codex.found && !installRecord?.codex) plan.codex = null;
 
   // Only ever delete a directory that is recognisably ours, and never the
   // home directory or a filesystem root, whatever CARWASH_HOME says.
@@ -343,9 +398,13 @@ export function describeUninstall(plan) {
     edit: `Edit ${tilde(plan.file)}: undo Carwash's status line and hooks; your other changes stay`,
     none: `Leave ${tilde(plan.file)} alone`,
   }[plan.action];
-  const steps = [[what, plan.note]];
-  if (plan.skill) steps.push([`Remove the /wash command at ${tilde(plan.skillDir)}`]);
-  else if (plan.foreignSkill) steps.push([`Leave the /wash command at ${tilde(plan.skillDir)} alone (not Carwash's)`]);
+  const steps = [];
+  if (plan.claude) {
+    steps.push([what, plan.note]);
+    if (plan.skill) steps.push([`Remove the /wash command at ${tilde(plan.skillDir)}`]);
+    else if (plan.foreignSkill) steps.push([`Leave the /wash command at ${tilde(plan.skillDir)} alone (not Carwash's)`]);
+  }
+  if (plan.codex) steps.push(...describeCodexUninstall(plan.codex));
   const briefs = plan.briefs ? `, including ${plan.briefs} waiting ${plan.briefs === 1 ? 'brief' : 'briefs'}` : '';
   steps.push([plan.removeHome ? `Delete ${tilde(plan.home)}${briefs}` : `Leave ${tilde(plan.home)} alone (not a Carwash folder)`]);
   steps.forEach(([step, note], i) => {
@@ -366,5 +425,6 @@ export function applyUninstall(plan) {
       // the folder holds something else, which stays
     }
   }
+  if (plan.codex) applyCodexUninstall(plan.codex);
   if (plan.removeHome) rmSync(plan.home, { recursive: true, force: true });
 }

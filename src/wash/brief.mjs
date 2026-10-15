@@ -1,9 +1,12 @@
 import { CHARS_PER_TOKEN, capFor } from '../levels.mjs';
 import { formatTokens } from '../statusline/render.mjs';
+import { toolInfo, toolOf } from '../tools.mjs';
 
 // The wording around a brief: what Claude is told when writing one, how its
 // reply is recognised, and what the user and the next session are shown. Also
 // the two places Carwash explains itself: the first-run welcome and /wash help.
+// Wording that names the tool or its commands takes the tool's id (see
+// tools.mjs); Claude Code is the default.
 
 // Every brief opens with this heading. It is how a reply is known to be a
 // brief, and where anything written before it is cut off.
@@ -70,14 +73,14 @@ export function retryNote(level, cap, tokens) {
   );
 }
 
-const NEXT_STEP = 'Type /clear to start fresh with it. This is not a normal clear: your brief carries over. Old session stays in /resume.';
+const nextStep = (tool) => `${toolInfo(tool).afterClear} This is not a normal clear: your brief carries over. Old session stays in /resume.`;
 
 // Shown to the user once a brief has been saved.
-export function readyMessage(record) {
+export function readyMessage(record, tool = toolOf(record)) {
   let size = sizeOf(record);
   if (record.overCap) size += `, which is over the ${formatTokens(record.cap)} cap even after asking for a shorter one`;
   else if (record.cap) size += ` of ${formatTokens(record.cap)} cap`;
-  return `Brief ready ✓ ${size}. ${NEXT_STEP}`;
+  return `Brief ready ✓ ${size}. ${nextStep(tool)}`;
 }
 
 // One line on how the repository differs from when the brief was written, or
@@ -100,16 +103,22 @@ export function stalenessLine(source, current) {
 
 // Shown to the user when a fresh session starts with a brief. The old
 // session's size is the reading /wash was sized from, when there was one.
-export function loadedMessage(record, now, stale) {
+export function loadedMessage(record, now, stale, tool = 'claude') {
   const before = Number.isFinite(record.used) && record.used > 0 ? `, down from ~${formatTokens(record.used)} in the old session` : '';
-  return (
-    `Loaded your Carwash brief (${sizeOf(record)}, ${ageOf(record, now)})${before}.${stale ? ` ${stale}` : ''} ` +
-    "That size is the brief alone; the meter also counts Claude Code's own baseline."
-  );
+  const loaded = `Loaded your Carwash brief (${sizeOf(record)}, ${ageOf(record, now)})${before}.${stale ? ` ${stale}` : ''}`;
+  if (!toolInfo(tool).meter) return loaded;
+  return `${loaded} That size is the brief alone; the meter also counts ${toolInfo(tool).name}'s own baseline.`;
 }
 
 // Shown once, at the first session after install.
-export function welcomeMessage() {
+export function welcomeMessage(tool = 'claude') {
+  if (tool === 'codex') {
+    return [
+      'Context Carwash installed ✓ (shown once)',
+      '  • Getting full? $wash, then /clear and send your next message. You start fresh, right where you left off',
+      '  • Nothing runs on its own · $wash help for options',
+    ].join('\n');
+  }
   return [
     'Context Carwash installed ✓ (shown once)',
     '  • Status line: tokens in use, and how full the context is',
@@ -127,14 +136,18 @@ const LEVEL_NOTES = {
 
 // /wash help. `used` is this session's reading, when known, so each level can
 // show the most tokens its brief may take here.
-export function helpMessage(used, footer = null) {
-  const row = (args, note) => `  /wash ${args.padEnd(16)}${note}`;
+export function helpMessage(used, footer = null, tool = 'claude') {
+  const { wash, model, meter } = toolInfo(tool);
+  const row = (args, note) => `  ${wash} ${args.padEnd(16)}${note}`;
   const level = (name) => {
     const cap = capFor(name, used);
     return row(name, `${LEVEL_NOTES[name]}${cap ? `, up to ${formatTokens(cap)} tokens` : ''}`);
   };
+  const intro = meter
+    ? `${wash} compresses this conversation into a short brief. Your next /clear then starts a fresh session that begins with it, and the old session stays in /resume.`
+    : `${wash} compresses this conversation into a short brief. Your next /clear then starts a fresh session, and the brief loads with the first message you send there. The old session stays in /resume.`;
   return [
-    '/wash compresses this conversation into a short brief. Your next /clear then starts a fresh session that begins with it, and the old session stays in /resume.',
+    intro,
     '',
     level('light'),
     level('mid'),
@@ -142,21 +155,21 @@ export function helpMessage(used, footer = null) {
     row('discard', 'drop the brief; /clear is a normal clear again'),
     row('load [id]', 'make a waiting brief the one /clear uses'),
     '',
-    "The status line shows how many tokens this conversation is using, and the bar shows how close that is to the model's limit.",
-    'Writing a brief is an ordinary Claude reply, so it uses tokens. help, discard and load do not.',
+    ...(meter ? ["The status line shows how many tokens this conversation is using, and the bar shows how close that is to the model's limit."] : []),
+    `Writing a brief is an ordinary ${model} reply, so it uses tokens. help, discard and load do not.`,
     ...(footer ? ['', footer] : []),
   ].join('\n');
 }
 
 // Shown to the user when briefs are waiting but none was loaded.
-export function pointerMessage(records, now, why) {
+export function pointerMessage(records, now, why, tool = 'claude') {
   const one = records.length === 1;
   const listed = records.slice(0, 3).map((record) => describe(record, now));
   if (records.length > 3) listed.push(`and ${records.length - 3} more`);
   return (
     `Carwash: ${one ? 'a brief is' : `${records.length} briefs are`} waiting for this folder. ` +
     `${one ? 'It was not' : 'None was'} loaded because ${why}. ${listed.join(' · ')}. ` +
-    `To use ${one ? 'it' : 'one'}: /wash load ${one ? records[0].id : '<id>'}, then /clear.`
+    `To use ${one ? 'it' : 'one'}: ${toolInfo(tool).wash} load ${one ? records[0].id : '<id>'}, then /clear.`
   );
 }
 
@@ -167,7 +180,7 @@ export function composeContext(record, now, stale) {
   return [
     '# Carwash handoff',
     '',
-    `The user ran /wash in an earlier session and started this one to carry on from it. The brief below (${record.level}, written ${ageOf(record, now)}) is what that session handed over. The earlier conversation is not available to you.`,
+    `The user ran ${toolInfo(toolOf(record)).wash} in an earlier session and started this one to carry on from it. The brief below (${record.level}, written ${ageOf(record, now)}) is what that session handed over. The earlier conversation is not available to you.`,
     'If the brief is cut off below, or a note says the full text was saved to a file, read that file in full before you reply.',
     'Check the current state of a file before acting on what the brief says about it.',
     ...(stale ? [stale] : []),

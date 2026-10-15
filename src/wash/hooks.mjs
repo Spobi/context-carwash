@@ -6,38 +6,52 @@ import { installRecordPath, welcomedPath } from '../paths.mjs';
 import { recordDelivery, recordWash, refreshLedger, totals } from '../stats/ledger.mjs';
 import { statsReport } from '../stats/report.mjs';
 import { budgetNote, composeContext, describe, helpMessage, loadedMessage, parseReply, pointerMessage, readyMessage, retryNote, stalenessLine, welcomeMessage } from './brief.mjs';
+import { isTool, toolInfo, toolOf } from '../tools.mjs';
 import { repoState, worktreeRoot } from './git.mjs';
-import { currentProcess, isRunning, sameProcess } from './process.mjs';
+import { codexProcess, codexUnattended, currentProcess, isRunning, sameProcess } from './process.mjs';
+import { readCodexUsage } from './rollout.mjs';
 import { currentWash, endWash, loadUsage, startWash } from './session.mjs';
 import { AUTO_LOAD_MS, addRecord, claim, findRecords, purge, readyRecords, removeRecord, reopen, updateRecord } from './store.mjs';
 
-// Carwash's three Claude Code hooks:
+// Carwash's three hooks, in Claude Code and in Codex:
 //
-//   UserPromptExpansion  /wash was typed. A level starts a wash and tells
-//                        Claude the size limit; discard, load, stats and help are
-//                        handled here and never reach Claude.
-//   Stop                 Claude finished replying. If that reply is the brief,
-//                        save it.
+//   UserPromptExpansion  /wash was typed (Claude Code). In Codex, where $wash
+//   UserPromptSubmit     is a skill, every prompt comes through
+//                        UserPromptSubmit and only one starting with $wash is
+//                        ours. A level starts a wash and tells the model the
+//                        size limit; discard, load, stats and help are handled
+//                        here and never reach the model.
+//   Stop                 The model finished replying. If that reply is the
+//                        brief, save it.
 //   SessionStart         A session began. If a brief is meant for it, hand the
 //                        brief over. The first one after install says hello.
 //                        It also starts the daily update check, in the
 //                        background, and passes on what the last one found.
 //
-// Each handler returns the JSON to print for Claude Code, or null to stay out
-// of the way. None of them ever clears, restarts, or runs anything.
+// Each handler returns the JSON to print for the tool, or null to stay out of
+// the way. None of them ever clears, restarts, or runs anything. Both tools
+// read the same JSON fields here, apart from how a Stop asks for another try.
 
-const USAGE = 'Usage: /wash [light | mid | detailed], /wash discard [id], /wash load [id], /wash stats, /wash help';
+const usageLine = (tool) => {
+  const wash = toolInfo(tool).wash;
+  return `Usage: ${wash} [light | mid | detailed], ${wash} discard [id], ${wash} load [id], ${wash} stats, ${wash} help`;
+};
 
 // How many times to ask for a shorter brief before keeping an oversized one.
 const MAX_REWRITES = 2;
 
-// Stops the command before it reaches Claude: no model turn, no cost. Claude
-// Code shows the reason under "operation blocked by hook", so it names us.
+// Stops the command before it reaches the model: no model turn, no cost.
+// Claude Code shows the reason under "operation blocked by hook", Codex under
+// "Blocked by hook", so it names us.
 const block = (reason) => ({ decision: 'block', reason: `Carwash: ${reason}` });
 
 // A `claude -p` run or other unattended session has nobody to carry on a
 // conversation, so it must not use up a brief meant for a person.
 const unattended = (env) => env.CLAUDE_CODE_SESSION_ATTENDED === '0' || /^sdk/.test(env.CLAUDE_CODE_ENTRYPOINT ?? '');
+
+// Claude Code gives each prompt an id that every Stop of its turn repeats;
+// Codex does the same with its turn id.
+const promptIdOf = (payload) => payload.prompt_id ?? payload.turn_id ?? null;
 
 // The savings ledger is bookkeeping: if it fails, the brief still has to work.
 function quietly(ctx, fn) {
@@ -54,27 +68,43 @@ const cwdOf = (payload) => (typeof payload.cwd === 'string' && payload.cwd ? pay
 
 function onExpansion(payload, ctx) {
   if (String(payload.command_name ?? '').replace(/^\//, '') !== 'wash') return null;
-  const [verb = DEFAULT_LEVEL, ref] = String(payload.command_args ?? '').trim().toLowerCase().split(/\s+/).filter(Boolean);
-  if (isLevel(verb)) return begin(payload, verb, ctx);
+  return washCommand(payload, payload.command_args, 'UserPromptExpansion', ctx);
+}
+
+// Codex runs this for every prompt, so anything that is not $wash returns at
+// once, before any file or process is looked at.
+const DOLLAR_WASH = /^\s*\$wash(?![\w-])([\s\S]*)$/;
+
+function onPromptSubmit(payload, ctx) {
+  const found = typeof payload.prompt === 'string' ? DOLLAR_WASH.exec(payload.prompt) : null;
+  return found ? washCommand(payload, found[1], 'UserPromptSubmit', ctx) : null;
+}
+
+function washCommand(payload, args, event, ctx) {
+  const [verb = DEFAULT_LEVEL, ref] = String(args ?? '').trim().toLowerCase().split(/\s+/).filter(Boolean);
+  if (isLevel(verb)) return begin(payload, verb, event, ctx);
   if (verb === 'discard') return block(discard(payload, ref, ctx));
   if (verb === 'load') return block(load(payload, ref, ctx));
   if (verb === 'stats') return block(statsReport(totals(refreshLedger(ctx.env, { now: ctx.now, force: true }), ctx.now), { inClaude: true }));
-  if (verb === 'help') return block(helpMessage(loadUsage(ctx.env, payload.session_id)?.used ?? null, versionLine(ctx.version, ctx.env)));
-  return block(`/wash does not know "${verb}". ${USAGE}`);
+  if (verb === 'help') return block(helpMessage(ctx.usage(payload)?.used ?? null, versionLine(ctx.version, ctx.env), ctx.tool));
+  return block(`${toolInfo(ctx.tool).wash} does not know "${verb}". ${usageLine(ctx.tool)}`);
 }
 
-function begin(payload, level, { env, now }) {
-  const usage = loadUsage(env, payload.session_id);
+function begin(payload, level, event, ctx) {
+  const { env, now } = ctx;
+  const usage = ctx.usage(payload);
   const used = usage?.used ?? null;
   const cap = capFor(level, used);
-  startWash(env, payload.session_id, { promptId: payload.prompt_id ?? null, level, cap, used, size: usage?.size ?? null, startedAt: now, rewrites: 0 });
-  return { hookSpecificOutput: { hookEventName: 'UserPromptExpansion', additionalContext: budgetNote(level, cap, used) } };
+  startWash(env, payload.session_id, { promptId: promptIdOf(payload), level, cap, used, size: usage?.size ?? null, startedAt: now, rewrites: 0 });
+  return { hookSpecificOutput: { hookEventName: event, additionalContext: budgetNote(level, cap, used) } };
 }
 
-// Briefs waiting for the folder this session is in, other than its own.
-function waitingHere(payload, { env, now, me }) {
+// Briefs waiting for the folder this session is in, other than its own. Only
+// ones written in the same tool: a brief from the other one is used only when
+// asked for by its id.
+function waitingHere(payload, { env, now, me, tool }) {
   const here = worktreeRoot(cwdOf(payload));
-  return readyRecords(env, now).filter((record) => record.source?.worktree === here && !sameProcess(record.owner, me));
+  return readyRecords(env, now).filter((record) => record.source?.worktree === here && toolOf(record) === tool && !sameProcess(record.owner, me));
 }
 
 function discard(payload, ref, ctx) {
@@ -93,7 +123,7 @@ function discard(payload, ref, ctx) {
     return `discarded brief ${describe(mine[0], now)}. /clear is a normal clear again.`;
   }
   const others = waitingHere(payload, ctx);
-  const hint = others.length ? ` Waiting for this folder: ${others.map((record) => describe(record, now)).join(' · ')}. To drop one: /wash discard <id>.` : '';
+  const hint = others.length ? ` Waiting for this folder: ${others.map((record) => describe(record, now)).join(' · ')}. To drop one: ${toolInfo(ctx.tool).wash} discard <id>.` : '';
   return `no brief is ready in this session, so there was nothing to discard.${hint}`;
 }
 
@@ -119,14 +149,14 @@ function load(payload, ref, ctx) {
   } else {
     const others = waitingHere(payload, ctx);
     if (!others.length) return 'no briefs are waiting for this folder.';
-    if (others.length > 1) return `more than one brief is waiting for this folder: ${others.map((record) => describe(record, now)).join(' · ')}. Pick one: /wash load <id>.`;
+    if (others.length > 1) return `more than one brief is waiting for this folder: ${others.map((record) => describe(record, now)).join(' · ')}. Pick one: ${toolInfo(ctx.tool).wash} load <id>.`;
     match = { record: others[0], consumed: false };
   }
   const record = match.consumed ? reopen(env, match.record) : match.record;
   if (!record) return `brief ${match.record.id} could not be loaded: another session took it just now.`;
   const owned = adopt(record, payload, ctx);
   const elsewhere = owned.source?.worktree && owned.source.worktree !== worktreeRoot(cwdOf(payload)) ? ` Note: it was written in a different folder, ${owned.source.worktree}.` : '';
-  return `brief ${describe(owned, now)} is ready ✓ Type /clear to start fresh with it.${elsewhere}`;
+  return `brief ${describe(owned, now)} is ready ✓ ${toolInfo(ctx.tool).afterClear}${elsewhere}`;
 }
 
 // --- Stop ----------------------------------------------------------------
@@ -137,10 +167,12 @@ function onStop(payload, ctx) {
   const wash = currentWash(env, sessionId, now);
   if (!wash) return null;
 
-  // Claude Code gives a prompt and every Stop of its turn the same id. A Stop
-  // for some other prompt means the wash turn ended without one of its own:
-  // it was interrupted.
-  if (wash.promptId && payload.prompt_id && wash.promptId !== payload.prompt_id) {
+  // Claude Code gives a prompt and every Stop of its turn the same id, and
+  // Codex its turn id, including the Stops after asking for a shorter brief. A
+  // Stop for some other prompt means the wash turn ended without one of its
+  // own: it was interrupted.
+  const promptId = promptIdOf(payload);
+  if (wash.promptId && promptId && wash.promptId !== promptId) {
     endWash(env, sessionId);
     return null;
   }
@@ -148,20 +180,25 @@ function onStop(payload, ctx) {
   const reply = parseReply(payload.last_assistant_message);
   if (!reply) {
     endWash(env, sessionId);
-    return { systemMessage: 'Carwash: that reply was not a brief, so nothing was saved. Run /wash again to retry.' };
+    return { systemMessage: `Carwash: that reply was not a brief, so nothing was saved. Run ${toolInfo(ctx.tool).wash} again to retry.` };
   }
 
   const tokens = estimateTokens(reply.text);
   const overCap = Boolean(wash.cap) && tokens > wash.cap;
   if (overCap && wash.rewrites < MAX_REWRITES) {
     startWash(env, sessionId, { ...wash, rewrites: wash.rewrites + 1 });
-    return { hookSpecificOutput: { hookEventName: 'Stop', additionalContext: retryNote(wash.level, wash.cap, tokens) } };
+    const note = retryNote(wash.level, wash.cap, tokens);
+    // Codex continues the turn with a Stop's block reason as the next prompt.
+    if (ctx.tool === 'codex') return { decision: 'block', reason: note };
+    return { hookSpecificOutput: { hookEventName: 'Stop', additionalContext: note } };
   }
 
   const cwd = cwdOf(payload);
   const record = addRecord(
     env,
     {
+      // Briefs from Claude Code carry no tool, as before Codex support.
+      ...(ctx.tool === 'claude' ? {} : { tool: ctx.tool }),
       level: wash.level,
       title: reply.title,
       tokens,
@@ -192,10 +229,10 @@ function deliver(record, payload, ctx) {
   const { env, now } = ctx;
   // Another session may have taken it between the listing and now.
   if (!claim(env, record, payload.session_id, now)) return null;
-  quietly(ctx, () => recordDelivery(env, record, payload, now));
+  quietly(ctx, () => recordDelivery(env, record, payload, now, ctx.tool));
   const stale = stalenessLine(record.source, repoState(cwdOf(payload)));
   return {
-    systemMessage: loadedMessage(record, now, stale),
+    systemMessage: loadedMessage(record, now, stale, ctx.tool),
     hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: composeContext(record, now, stale) },
   };
 }
@@ -204,22 +241,22 @@ function deliver(record, payload, ctx) {
 // marker is the claim, so two sessions starting together cannot both say it.
 // Uninstall deletes the marker with the rest of ~/.carwash, so a reinstall
 // says it again. Without an install record there is nobody to welcome.
-function welcome({ env, now }) {
+function welcome({ env, now, tool }) {
   if (!existsSync(installRecordPath(env))) return null;
   try {
-    writeFileSync(welcomedPath(env), `${new Date(now).toISOString()}\n`, { flag: 'wx', mode: 0o600 });
+    writeFileSync(welcomedPath(env, tool), `${new Date(now).toISOString()}\n`, { flag: 'wx', mode: 0o600 });
   } catch {
     // Already shown, or nowhere to note it: better silent than said every time.
     return null;
   }
-  return { systemMessage: welcomeMessage() };
+  return { systemMessage: welcomeMessage(tool) };
 }
 
 function onSessionStart(payload, ctx) {
   // Only a brand-new conversation gets a brief; a resumed, compacted or
   // forked one already has its own history.
   if (payload.source !== 'startup' && payload.source !== 'clear') return null;
-  if (unattended(ctx.env)) return null;
+  if (ctx.unattended()) return null;
   // The welcome waits for a start that has nothing else to say.
   const result = briefAtStart(payload, ctx) ?? welcome(ctx);
   quietly(ctx, () => ctx.checkUpdates?.());
@@ -261,46 +298,60 @@ function briefAtStart(payload, ctx) {
 
   // A new process picks up a brief left for its folder, but only when there is
   // no doubt which one is meant. Otherwise it says what is waiting and loads
-  // nothing: the wrong context is worse than none.
+  // nothing: the wrong context is worse than none. A brief written in the other
+  // tool is not picked up this way.
   const here = worktreeRoot(cwdOf(payload));
-  const waiting = ready.filter((record) => record.source?.worktree === here);
+  const waiting = ready.filter((record) => record.source?.worktree === here && toolOf(record) === ctx.tool);
   if (!waiting.length) return null;
   let why = null;
   if (waiting.length > 1) why = 'there is more than one';
   else if (now - Date.parse(waiting[0].createdAt) > AUTO_LOAD_MS) why = 'it is over 12 hours old';
   else if (ctx.isRunning(waiting[0].owner)) why = 'the session that wrote it is still open';
-  return why ? { systemMessage: pointerMessage(waiting, now, why) } : deliver(waiting[0], payload, ctx);
+  return why ? { systemMessage: pointerMessage(waiting, now, why, ctx.tool) } : deliver(waiting[0], payload, ctx);
 }
 
 // --- entry point -----------------------------------------------------------
 
-// Handle one hook call. `input` is the JSON Claude Code sends on stdin.
+// Handle one hook call. `input` is the JSON the tool sends on stdin, and
+// `tool` says which tool that is: 'claude' (Claude Code) or 'codex'.
 //
 // `checkUpdates` starts the daily update check. Only the real command passes
-// it, so tests never go online.
-export function runHook({ input, env = process.env, platform = process.platform, now = Date.now(), me, running, onError, checkUpdates, version = packageVersion() } = {}) {
+// it, so tests never go online. `unattended` and `usage` stand in for asking
+// the system, in tests.
+export function runHook({ input, tool = 'claude', env = process.env, platform = process.platform, now = Date.now(), me, running, onError, checkUpdates, version = packageVersion(), unattended: isUnattended, usage } = {}) {
   let payload;
   try {
     payload = JSON.parse(input);
   } catch {
     return null;
   }
-  if (!payload || typeof payload !== 'object') return null;
+  if (!payload || typeof payload !== 'object' || !isTool(tool)) return null;
+  const codex = tool === 'codex';
+  const self = me ?? (codex ? codexProcess(platform) : currentProcess(env, platform));
   const ctx = {
+    tool,
     env,
     now,
-    me: me ?? currentProcess(env, platform),
+    me: self,
     isRunning: running ?? ((owner) => isRunning(owner, platform)),
     onError,
     checkUpdates,
     version,
+    unattended: isUnattended ?? (() => (codex ? codexUnattended(self.args) : unattended(env))),
+    // How much context the session is using. Claude Code's status line notes
+    // it as it draws the meter; Codex writes it into its session file.
+    usage: usage ?? ((p) => (codex ? readCodexUsage(p.transcript_path) : loadUsage(env, p.session_id))),
   };
-  switch (payload.hook_event_name) {
-    case 'UserPromptExpansion':
+  switch (`${tool}:${payload.hook_event_name}`) {
+    case 'claude:UserPromptExpansion':
       return onExpansion(payload, ctx);
-    case 'Stop':
+    case 'codex:UserPromptSubmit':
+      return onPromptSubmit(payload, ctx);
+    case 'claude:Stop':
+    case 'codex:Stop':
       return onStop(payload, ctx);
-    case 'SessionStart':
+    case 'claude:SessionStart':
+    case 'codex:SessionStart':
       return onSessionStart(payload, ctx);
     default:
       return null;
