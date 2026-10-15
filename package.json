@@ -1,6 +1,6 @@
 {
   "name": "context-carwash",
-  "version": "0.1.9",
+  "version": "0.2.0",
   "description": "A quiet context meter and deliberate fresh-session handoff for Claude Code.",
   "license": "MIT",
   "repository": {
