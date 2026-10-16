@@ -69,7 +69,9 @@ If you have Codex, `install` sets it up too. It works the same way, with a few d
 - The command is `$wash` (Codex keeps `/` for its own commands). Same options: `$wash light`, `$wash discard`, `$wash help` and so on.
 - Codex asks you to approve new hooks before it runs them. The first time you start Codex after installing, choose **Trust all and continue**.
 - After `/clear`, send your next message (even just "continue"). The brief loads with it, because that's when Codex starts the new session.
-- There's no meter. Codex's status line can only show its own items.
+- The meter shows up as a line after each reply, because Codex's status line can only show its own items:
+  `session context ~70k  [████░░░░░░░░░░░]  $wash to compress, then /clear`
+  The bar is in colour from Codex 0.162.0 on (plain text before that, or with `NO_COLOR`). It's shown to you only, never sent to the model, so it costs no tokens.
 - A brief written in Claude Code isn't picked up by Codex on its own, and the other way round. To use one anyway, run `$wash load <id>` (or `/wash load <id>`).
 - `codex exec` runs never use up a brief.
 

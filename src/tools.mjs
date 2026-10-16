@@ -7,8 +7,8 @@
 //   Codex        $wash is a skill, mentioned with a dollar sign (Codex keeps
 //                the slash for its own commands). Codex starts the new session
 //                when the first message after /clear is sent, so that is when
-//                the brief loads. There is no meter: Codex's status line only
-//                shows its own items.
+//                the brief loads. Its status line only shows its own items,
+//                so the meter is a line after each reply instead.
 
 export const TOOLS = {
   claude: {
@@ -17,6 +17,7 @@ export const TOOLS = {
     model: 'Claude',
     wash: '/wash',
     meter: true,
+    replyMeter: false,
     afterClear: 'Type /clear to start fresh with it.',
   },
   codex: {
@@ -25,6 +26,7 @@ export const TOOLS = {
     model: 'Codex',
     wash: '$wash',
     meter: false,
+    replyMeter: true,
     afterClear: 'Type /clear, then send your next message (even just "continue"): the brief loads with it.',
   },
 };

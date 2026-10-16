@@ -2,7 +2,7 @@
 
 ## 0.2.1
 
-- Codex support. `install` sets up Codex too when it finds it: three hooks in `~/.codex/hooks.json` and a `$wash` command in `~/.codex/skills/wash`. Codex asks you to trust the hooks once. After `/clear`, the brief loads with your next message. There is no meter in Codex.
+- Codex support. `install` sets up Codex too when it finds it: three hooks in `~/.codex/hooks.json` and a `$wash` command in `~/.codex/skills/wash`. Codex asks you to trust the hooks once. After `/clear`, the brief loads with your next message. Codex's status line can only show its own items, so the meter is a line after each reply instead, in colour from Codex 0.162.0 on. It is shown to you only and costs no tokens.
 - `carwash doctor` checks the Codex hooks, whether Codex trusts them, and `$wash`.
 - `carwash stats` counts Codex sessions too.
 - Claude Code works exactly as before. A brief from one tool is not picked up by the other unless you load it by id.

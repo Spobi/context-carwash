@@ -1,4 +1,5 @@
 import { CHARS_PER_TOKEN, capFor } from '../levels.mjs';
+import { colorAt, paint } from '../statusline/color.mjs';
 import { formatTokens } from '../statusline/render.mjs';
 import { toolInfo, toolOf } from '../tools.mjs';
 
@@ -106,8 +107,31 @@ export function stalenessLine(source, current) {
 export function loadedMessage(record, now, stale, tool = 'claude') {
   const before = Number.isFinite(record.used) && record.used > 0 ? `, down from ~${formatTokens(record.used)} in the old session` : '';
   const loaded = `Loaded your Carwash brief (${sizeOf(record)}, ${ageOf(record, now)})${before}.${stale ? ` ${stale}` : ''}`;
-  if (!toolInfo(tool).meter) return loaded;
+  if (!toolInfo(tool).meter && !toolInfo(tool).replyMeter) return loaded;
   return `${loaded} That size is the brief alone; the meter also counts ${toolInfo(tool).name}'s own baseline.`;
+}
+
+const METER_CELLS = 15;
+// From this share of the window on, the meter says so in words.
+const FULL_AT = 75;
+
+// The meter as one line, for a tool that shows it after each reply rather than
+// in its status line: the tokens in use, a bar for how full the window is, and
+// what to do about it. `size` may be unknown, and then there is no bar. The
+// bar's cells and "getting full" take the status line's colours at `depth`
+// ('none' for plain text).
+export function replyMeterMessage({ used, size }, tool = 'codex', depth = 'none') {
+  const parts = [`session context ~${formatTokens(used)}`];
+  const pct = size ? Math.min(100, (used / size) * 100) : null;
+  if (pct !== null) {
+    const filled = Math.round((pct / 100) * METER_CELLS);
+    let cells = '';
+    for (let i = 0; i < filled; i++) cells += paint('█', colorAt(((i + 0.5) / METER_CELLS) * 100), depth);
+    parts.push(`[${cells}${'░'.repeat(METER_CELLS - filled)}]`);
+  }
+  const hint = `${toolInfo(tool).wash} to compress, then /clear`;
+  parts.push(pct !== null && pct >= FULL_AT ? `${paint('getting full', colorAt(pct), depth)} · ${hint}` : hint);
+  return parts.join('  ');
 }
 
 // Shown once, at the first session after install.
@@ -115,6 +139,7 @@ export function welcomeMessage(tool = 'claude') {
   if (tool === 'codex') {
     return [
       'Context Carwash installed ✓ (shown once)',
+      '  • After each reply: tokens in use, and how full the context is',
       '  • Getting full? $wash, then /clear and send your next message. You start fresh, right where you left off',
       '  • Nothing runs on its own · $wash help for options',
     ].join('\n');
@@ -137,7 +162,7 @@ const LEVEL_NOTES = {
 // /wash help. `used` is this session's reading, when known, so each level can
 // show the most tokens its brief may take here.
 export function helpMessage(used, footer = null, tool = 'claude') {
-  const { wash, model, meter } = toolInfo(tool);
+  const { wash, model, meter, replyMeter } = toolInfo(tool);
   const row = (args, note) => `  ${wash} ${args.padEnd(16)}${note}`;
   const level = (name) => {
     const cap = capFor(name, used);
@@ -156,6 +181,7 @@ export function helpMessage(used, footer = null, tool = 'claude') {
     row('load [id]', 'make a waiting brief the one /clear uses'),
     '',
     ...(meter ? ["The status line shows how many tokens this conversation is using, and the bar shows how close that is to the model's limit."] : []),
+    ...(replyMeter ? ["The line after each reply shows how many tokens this conversation is using, and the bar shows how close that is to the model's limit. It is shown to you only and costs no tokens."] : []),
     `Writing a brief is an ordinary ${model} reply, so it uses tokens. help, discard and load do not.`,
     ...(footer ? ['', footer] : []),
   ].join('\n');

@@ -1,15 +1,17 @@
 import { existsSync, writeFileSync } from 'node:fs';
 import { packageVersion } from '../install/install.mjs';
 import { startNotice, versionLine } from '../install/notice.mjs';
+import { isNewer } from '../install/update.mjs';
 import { DEFAULT_LEVEL, capFor, estimateTokens, isLevel } from '../levels.mjs';
 import { installRecordPath, welcomedPath } from '../paths.mjs';
 import { recordDelivery, recordWash, refreshLedger, totals } from '../stats/ledger.mjs';
+import { colorDepth } from '../statusline/color.mjs';
 import { statsReport } from '../stats/report.mjs';
-import { budgetNote, composeContext, describe, helpMessage, loadedMessage, parseReply, pointerMessage, readyMessage, retryNote, stalenessLine, welcomeMessage } from './brief.mjs';
+import { budgetNote, composeContext, describe, helpMessage, loadedMessage, parseReply, pointerMessage, readyMessage, replyMeterMessage, retryNote, stalenessLine, welcomeMessage } from './brief.mjs';
 import { isTool, toolInfo, toolOf } from '../tools.mjs';
 import { repoState, worktreeRoot } from './git.mjs';
 import { codexProcess, codexUnattended, currentProcess, isRunning, sameProcess } from './process.mjs';
-import { readCodexUsage } from './rollout.mjs';
+import { readCodexReplyUsage, readCodexUsage, readCodexVersion } from './rollout.mjs';
 import { currentWash, endWash, loadUsage, startWash } from './session.mjs';
 import { AUTO_LOAD_MS, addRecord, claim, findRecords, purge, readyRecords, removeRecord, reopen, updateRecord } from './store.mjs';
 
@@ -22,7 +24,7 @@ import { AUTO_LOAD_MS, addRecord, claim, findRecords, purge, readyRecords, remov
 //                        size limit; discard, load, stats and help are handled
 //                        here and never reach the model.
 //   Stop                 The model finished replying. If that reply is the
-//                        brief, save it.
+//                        brief, save it. Otherwise, in Codex, show the meter.
 //   SessionStart         A session began. If a brief is meant for it, hand the
 //                        brief over. The first one after install says hello.
 //                        It also starts the daily update check, in the
@@ -167,11 +169,27 @@ function load(payload, ref, ctx) {
 
 // --- Stop ----------------------------------------------------------------
 
+// Where the status line cannot show the meter (Codex), it follows each reply
+// instead. It goes to the user only, never to the model, so it costs nothing.
+function replyMeter(payload, ctx) {
+  if (!toolInfo(ctx.tool).replyMeter) return null;
+  const usage = ctx.replyUsage(payload);
+  if (!usage) return null;
+  const depth = codexShowsColor(ctx.codexVersion(payload)) ? colorDepth(ctx.env) : 'none';
+  return { systemMessage: replyMeterMessage(usage, ctx.tool, depth) };
+}
+
+// Codex draws colour codes in a hook's message from 0.162.0 on (openai/codex
+// #50359). Before that they would show as stray characters, so an unknown
+// version gets plain text.
+const COLOR_SINCE = '0.162.0';
+const codexShowsColor = (version) => /^\d+\.\d+\.\d+$/.test(version ?? '') && !isNewer(COLOR_SINCE, version);
+
 function onStop(payload, ctx) {
   const { env, now, me } = ctx;
   const sessionId = payload.session_id;
   const wash = currentWash(env, sessionId, now);
-  if (!wash) return null;
+  if (!wash) return replyMeter(payload, ctx);
 
   // Claude Code gives a prompt and every Stop of its turn the same id, and
   // Codex its turn id, including the Stops after asking for a shorter brief. A
@@ -180,7 +198,7 @@ function onStop(payload, ctx) {
   const promptId = promptIdOf(payload);
   if (wash.promptId && promptId && wash.promptId !== promptId) {
     endWash(env, sessionId);
-    return null;
+    return replyMeter(payload, ctx);
   }
 
   const reply = parseReply(payload.last_assistant_message);
@@ -329,7 +347,7 @@ function briefAtStart(payload, ctx) {
 // `checkUpdates` starts the daily update check. Only the real command passes
 // it, so tests never go online. `unattended` and `usage` stand in for asking
 // the system, in tests.
-export function runHook({ input, tool = 'claude', env = process.env, platform = process.platform, now = Date.now(), me, running, onError, checkUpdates, version = packageVersion(), unattended: isUnattended, usage } = {}) {
+export function runHook({ input, tool = 'claude', env = process.env, platform = process.platform, now = Date.now(), me, running, onError, checkUpdates, version = packageVersion(), unattended: isUnattended, usage, replyUsage } = {}) {
   let payload;
   try {
     payload = JSON.parse(input);
@@ -352,6 +370,9 @@ export function runHook({ input, tool = 'claude', env = process.env, platform = 
     // How much context the session is using. Claude Code's status line notes
     // it as it draws the meter; Codex writes it into its session file.
     usage: usage ?? ((p) => (codex ? readCodexUsage(p.transcript_path) : loadUsage(env, p.session_id))),
+    // The same once a reply has ended, waiting briefly for Codex to note it.
+    replyUsage: replyUsage ?? ((p) => readCodexReplyUsage(p.transcript_path)),
+    codexVersion: (p) => readCodexVersion(p.transcript_path),
   };
   switch (`${tool}:${payload.hook_event_name}`) {
     case 'claude:UserPromptExpansion':

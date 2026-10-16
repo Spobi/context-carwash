@@ -34,7 +34,7 @@ Inside Claude Code, once installed:
   /wash help                       Explain the meter and the options
 
 In Codex it is $wash, with the same options. After /clear, the brief loads
-with the first message you send. Codex has no meter.
+with the first message you send. Codex shows the meter after each reply.
 
 Nothing happens automatically, and nothing about you is ever sent. Once a day a
 new session reads Carwash's public page on npm for the newest version and any

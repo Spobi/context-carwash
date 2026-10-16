@@ -11,9 +11,10 @@ import { applyInstall, applyUninstall, describeInstall, describeUninstall, isCar
 import { UserError } from '../src/install/settings.mjs';
 import { measureCodex, readLedger, refreshLedger, totals } from '../src/stats/ledger.mjs';
 import { statsReport } from '../src/stats/report.mjs';
+import { replyMeterMessage } from '../src/wash/brief.mjs';
 import { runHook } from '../src/wash/hooks.mjs';
 import { codexProcess, codexSubcommand, codexUnattended, processInfo } from '../src/wash/process.mjs';
-import { readCodexUsage } from '../src/wash/rollout.mjs';
+import { readCodexReplyUsage, readCodexUsage, readCodexVersion } from '../src/wash/rollout.mjs';
 import { currentWash, saveUsage } from '../src/wash/session.mjs';
 import { readyRecords } from '../src/wash/store.mjs';
 
@@ -128,12 +129,118 @@ test('in Codex an over-long brief is sent back by blocking the Stop, in the same
   assert.equal(ready().length, 1);
 });
 
+test('after each ordinary Codex reply, the meter: shown to the user, never to the model', () => {
+  const { transcript, stop, submit } = sandbox();
+  // 100k of 258.4k: six of fifteen cells.
+  const result = stop('Here is the fix.');
+  assert.deepEqual(Object.keys(result), ['systemMessage']);
+  assert.equal(result.systemMessage, 'session context ~100k  [██████░░░░░░░░░]  $wash to compress, then /clear');
+  // From three quarters full it says so.
+  writeFileSync(transcript, reading(200_000) + '\n');
+  assert.equal(stop('Done.').systemMessage, 'session context ~200k  [████████████░░░]  getting full · $wash to compress, then /clear');
+  // A wash that never got its reply (another prompt ended it) gets the meter too.
+  submit('$wash light', { turn: 'T-1' });
+  assert.match(stop('Something else.', { turn: 'T-2' }).systemMessage, /^session context ~200k/);
+  // No reading yet: nothing to show.
+  writeFileSync(transcript, prompt('hi') + '\n');
+  assert.equal(stop('Hi.'), null);
+});
+
+test('Claude Code never gets the after-reply meter: its status line has the real one', () => {
+  const { cwd, transcript, env } = sandbox();
+  let asked = false;
+  const input = JSON.stringify({ hook_event_name: 'Stop', session_id: 'C1', cwd, transcript_path: transcript, last_assistant_message: 'Done.' });
+  const replyUsage = () => {
+    asked = true;
+    return { used: 100_000, size: 200_000 };
+  };
+  assert.equal(runHook({ input, tool: 'claude', env, now: NOW, me: B, running: () => false, replyUsage }), null);
+  assert.equal(asked, false);
+});
+
+test('the after-reply meter is in colour where Codex can draw it, and plain text elsewhere', () => {
+  const { root, cwd, env } = sandbox();
+  const transcript = join(root, 'versioned.jsonl');
+  const stopIn = (version, extraEnv = {}) => {
+    writeFileSync(transcript, [line('session_meta', { id: 'T1', cli_version: version }), reading(200_000)].join('\n') + '\n');
+    const input = JSON.stringify({ hook_event_name: 'Stop', session_id: 'S1', turn_id: 'T-1', cwd, transcript_path: transcript, last_assistant_message: 'Done.' });
+    return runHook({ input, tool: 'codex', env: { ...env, ...extraEnv }, now: NOW, me: A, running: () => false }).systemMessage;
+  };
+  const plain = 'session context ~200k  [████████████░░░]  getting full · $wash to compress, then /clear';
+  const strip = (text) => text.replace(/\x1b\[[0-9;]*m/g, '');
+  // 0.162.0 and later: each cell coloured, green to red, and so is "getting full".
+  const colored = stopIn('0.162.1');
+  assert.equal(strip(colored), plain);
+  assert.equal(colored.match(/\x1b\[38;5;\d+m█\x1b\[39m/g).length, 12);
+  assert.match(colored, /\x1b\[38;5;\d+mgetting full\x1b\[39m · \$wash/);
+  assert.match(stopIn('0.163.0', { COLORTERM: 'truecolor' }), /^session context ~200k {2}\[\x1b\[38;2;\d+;\d+;\d+m█/);
+  assert.notEqual(stopIn('0.162.0'), plain);
+  // Older or unknown versions would show the codes as text; NO_COLOR is obeyed.
+  assert.equal(stopIn('0.161.0'), plain);
+  assert.equal(stopIn('0.163.0-alpha.1'), plain);
+  assert.equal(stopIn(undefined), plain);
+  assert.equal(stopIn('0.162.1', { NO_COLOR: '1' }), plain);
+});
+
+test("the Codex version comes from the session file's first line", () => {
+  const { root } = sandbox();
+  const file = join(root, 'meta.jsonl');
+  writeFileSync(file, [line('session_meta', { id: 'T1', base_instructions: 'x'.repeat(200_000), cli_version: '0.162.1' }), reading(1000)].join('\n'));
+  assert.equal(readCodexVersion(file), '0.162.1');
+  writeFileSync(file, [reading(1000), line('session_meta', { cli_version: '0.162.1' })].join('\n'));
+  assert.equal(readCodexVersion(file), null);
+  writeFileSync(file, '{"half a li');
+  assert.equal(readCodexVersion(file), null);
+  assert.equal(readCodexVersion(join(root, 'missing.jsonl')), null);
+  assert.equal(readCodexVersion(null), null);
+});
+
+test('the meter line without a known window size has no bar', () => {
+  assert.equal(replyMeterMessage({ used: 42_000, size: null }), 'session context ~42k  $wash to compress, then /clear');
+  assert.equal(replyMeterMessage({ used: 300_000, size: 258_400 }), 'session context ~300k  [███████████████]  getting full · $wash to compress, then /clear');
+});
+
+test("the meter waits briefly for the reply's own reading, then makes do with the last one", () => {
+  const { root } = sandbox();
+  const file = join(root, 'turn.jsonl');
+  const reply = line('event_msg', { type: 'item_completed', item: { type: 'AgentMessage', content: [{ type: 'Text', text: 'done' }] } });
+  // The reading already follows the reply: no waiting.
+  let waits = 0;
+  const wait = () => waits++;
+  writeFileSync(file, [reading(10_000), reply, reading(12_000)].join('\n') + '\n');
+  assert.deepEqual(readCodexReplyUsage(file, { wait }), { used: 12_000, size: 258_400 });
+  assert.equal(waits, 0);
+  // Not written yet: read again until it is.
+  writeFileSync(file, [reading(10_000), reply].join('\n') + '\n');
+  const arrives = () => {
+    if (++waits === 2) writeFileSync(file, [reading(10_000), reply, reading(12_500)].join('\n') + '\n');
+  };
+  waits = 0;
+  assert.deepEqual(readCodexReplyUsage(file, { wait: arrives }), { used: 12_500, size: 258_400 });
+  assert.equal(waits, 2);
+  // Never written: give up after the settle time with the earlier reading.
+  writeFileSync(file, [reading(10_000), reply].join('\n') + '\n');
+  waits = 0;
+  assert.deepEqual(readCodexReplyUsage(file, { wait, settleMs: 100 }), { used: 10_000, size: 258_400 });
+  assert.equal(waits, 4);
+  // The reply as Codex also records it for the model counts the same.
+  const response = line('response_item', { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'done' }] });
+  writeFileSync(file, [reading(10_000), response].join('\n') + '\n');
+  waits = 0;
+  assert.deepEqual(readCodexReplyUsage(file, { wait, settleMs: 50 }), { used: 10_000, size: 258_400 });
+  assert.equal(waits, 2);
+  assert.equal(readCodexReplyUsage(join(root, 'missing.jsonl'), { wait }), null);
+});
+
 test('$wash then /clear and a message: the fresh Codex session starts with the brief', () => {
   const { wash, start, ready } = sandbox();
   wash('light');
   const result = start('clear', { now: NOW + 2 * 60_000 });
-  // No meter in Codex, so nothing about one.
-  assert.equal(result.systemMessage, 'Loaded your Carwash brief (light ~61, 2m ago), down from ~100k in the old session.');
+  // The meter after each reply counts Codex's baseline too, so that is said.
+  assert.equal(
+    result.systemMessage,
+    "Loaded your Carwash brief (light ~61, 2m ago), down from ~100k in the old session. That size is the brief alone; the meter also counts Codex's own baseline.",
+  );
   assert.equal(result.hookSpecificOutput.hookEventName, 'SessionStart');
   assert.match(result.hookSpecificOutput.additionalContext, /^# Carwash handoff\n\nThe user ran \$wash in an earlier session/);
   assert.ok(result.hookSpecificOutput.additionalContext.endsWith(BRIEF));
@@ -222,7 +329,7 @@ test('Codex and Claude Code each say hello once', () => {
   const { env, start } = sandbox();
   mkdirSync(env.CARWASH_HOME, { recursive: true });
   writeFileSync(join(env.CARWASH_HOME, 'install.json'), '{}');
-  assert.match(start('startup').systemMessage, /^Context Carwash installed ✓ \(shown once\)\n {2}• Getting full\? \$wash, then \/clear and send your next message/);
+  assert.match(start('startup').systemMessage, /^Context Carwash installed ✓ \(shown once\)\n {2}• After each reply: tokens in use, and how full the context is\n {2}• Getting full\? \$wash, then \/clear and send your next message/);
   assert.equal(start('startup'), null);
   const claude = runHook({ input: JSON.stringify({ hook_event_name: 'SessionStart', source: 'startup', session_id: 'C1', cwd: env.CARWASH_HOME }), env, now: NOW, me: B, running: () => false });
   assert.match(claude.systemMessage, /Status line: tokens in use/);
