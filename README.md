@@ -87,12 +87,16 @@ Carwash stats, since 3 Oct 2026 (12 days)
   Briefs written              7  (light 1 · mid 5 · detailed 1)
   Started fresh with one      6
   Prompts in fresh sessions   94  (410 requests to Claude)
-  Context not re-sent         ~21M tokens
+  Context not re-sent         ~11M tokens  (at most ~21M tokens)
   Spent writing briefs        ~0.9M tokens
-  Net saved                   ~20M tokens
+  Net saved                   ~10M tokens  (at most ~20M tokens)
 ```
 
-Every request to Claude or Codex sends the whole conversation again. After a wash, each request starts from the small brief instead, so Carwash counts the requests you actually made and adds up the difference. Repeated context is charged at about a tenth of the price, so in dollars you're saving roughly a tenth of these numbers. You can also see this inside Claude Code with `/wash stats`.
+Every request to Claude or Codex sends the whole conversation again. After a wash, each request starts from the small brief instead, so Carwash counts the requests you actually made and adds up the difference. Counting stops where the old conversation would have filled up and compacted on its own.
+
+You wouldn't have kept going in the old conversation forever, so the main number only counts the first part of the prompts after each wash. That's two-thirds to begin with. Carwash then adjusts it by looking at how far your own past conversations went once they were that big, so if you usually clear around 300k, a wash at 300k counts for less. Anything the fresh conversation had to read again, like a file the old one already had open, is taken off too. "At most" counts every prompt. All of this is worked out on your computer from Claude Code's own history files, and only a few numbers per conversation are kept.
+
+Repeated context is charged at about a tenth of the price, so in dollars you're saving roughly a tenth of these numbers. You can also see this inside Claude Code with `/wash stats`.
 
 If you run `stats --share`, it shows you exactly what it would send before asking.
 

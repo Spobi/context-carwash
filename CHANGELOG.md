@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- `carwash stats` leads with a likelier saving and shows the old figure as the most it could be. It counts only the first part of the prompts after each wash, since you would have cleared the old conversation at some point anyway. That share starts at two-thirds and is learned from how far your own Claude Code conversations go, read on your machine. Output the fresh conversation had to read again, which the old one already had, is taken off.
+- `stats --share` sends the likely figure as well as the full one.
+
 ## 0.2.1
 
 - Codex support. `install` sets up Codex too when it finds it: three hooks in `~/.codex/hooks.json` and a `$wash` command in `~/.codex/skills/wash`. Codex asks you to trust the hooks once. After `/clear`, the brief loads with your next message. Codex's status line can only show its own items, so the meter is a line after each reply instead, in colour from Codex 0.162.0 on. It is shown to you only and costs no tokens.

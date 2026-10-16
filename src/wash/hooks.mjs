@@ -4,9 +4,9 @@ import { startNotice, versionLine } from '../install/notice.mjs';
 import { isNewer } from '../install/update.mjs';
 import { DEFAULT_LEVEL, capFor, estimateTokens, isLevel } from '../levels.mjs';
 import { installRecordPath, welcomedPath } from '../paths.mjs';
-import { recordDelivery, recordWash, refreshLedger, totals } from '../stats/ledger.mjs';
+import { recordDelivery, recordWash, refreshLedger } from '../stats/ledger.mjs';
 import { colorDepth } from '../statusline/color.mjs';
-import { statsReport } from '../stats/report.mjs';
+import { currentTotals, statsReport } from '../stats/report.mjs';
 import { budgetNote, composeContext, describe, helpMessage, loadedMessage, parseReply, pointerMessage, readyMessage, replyMeterMessage, retryNote, stalenessLine, welcomeMessage } from './brief.mjs';
 import { isTool, toolInfo, toolOf } from '../tools.mjs';
 import { repoState, worktreeRoot } from './git.mjs';
@@ -93,7 +93,7 @@ function washCommand(payload, args, event, ctx) {
   if (isLevel(verb)) return begin(payload, verb, event, ctx);
   if (verb === 'discard') return block(discard(payload, ref, ctx));
   if (verb === 'load') return block(load(payload, ref, ctx));
-  if (verb === 'stats') return block(statsReport(totals(refreshLedger(ctx.env, { now: ctx.now, force: true }), ctx.now), { inClaude: true }));
+  if (verb === 'stats') return block(statsReport(currentTotals(ctx.env, ctx.now), { inClaude: true }));
   if (verb === 'help') return block(helpMessage(ctx.usage(payload)?.used ?? null, versionLine(ctx.version, ctx.env), ctx.tool));
   return block(`${toolInfo(ctx.tool).wash} does not know "${verb}". ${usageLine(ctx.tool)}`);
 }

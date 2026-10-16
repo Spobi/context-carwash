@@ -2,6 +2,8 @@ import { randomBytes } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { writeFileAtomic } from '../files.mjs';
 import { shareIdPath } from '../paths.mjs';
+import { learnHabits, shareFor } from './habits.mjs';
+import { refreshLedger, totals } from './ledger.mjs';
 import { formatTokens } from '../statusline/render.mjs';
 import { toolInfo } from '../tools.mjs';
 
@@ -12,6 +14,16 @@ const LEVEL_ORDER = ['light', 'mid', 'detailed'];
 
 const tokens = (n) => `~${formatTokens(n)} tokens`;
 
+// The ledger measured afresh, with the likely saving judged by this person's
+// own habits.
+export function currentTotals(env, now = Date.now()) {
+  const sessions = learnHabits(env, { now });
+  const sum = totals(refreshLedger(env, { now, force: true }), now, { shareOf: (entry, measured) => shareFor(sessions, entry.used, measured.turns?.length ?? measured.prompts) });
+  return { ...sum, learnedFrom: sessions.length };
+}
+
+const percent = (share) => `${Math.round(share * 100)}%`;
+
 // Who the requests went to: Claude, Codex, or both.
 const modelName = (tools = ['claude']) => (tools.length === 1 ? toolInfo(tools[0]).model : 'the model');
 
@@ -21,7 +33,9 @@ export function statsReport(sum, { inClaude = false } = {}) {
   }
   const since = new Date(sum.since).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
   const levels = LEVEL_ORDER.filter((name) => sum.levels[name]).map((name) => `${name} ${sum.levels[name]}`).join(' · ');
-  const net = sum.notResent - sum.briefCost;
+  const likely = sum.likely ?? sum.notResent;
+  const net = likely - sum.briefCost;
+  const most = sum.notResent - sum.briefCost;
   const row = (label, value) => `  ${label.padEnd(28)}${value}`;
   const model = modelName(sum.tools);
   return [
@@ -30,11 +44,12 @@ export function statsReport(sum, { inClaude = false } = {}) {
     row('Briefs written', `${sum.washes}${levels ? `  (${levels})` : ''}`),
     row('Started fresh with one', `${sum.delivered}`),
     row('Prompts in fresh sessions', `${sum.prompts}  (${sum.requests} requests to ${model})`),
-    row('Context not re-sent', tokens(sum.notResent)),
+    row('Context not re-sent', `${tokens(likely)}  (at most ${tokens(sum.notResent)})`),
     row('Spent writing briefs', tokens(sum.briefCost)),
-    row(net >= 0 ? 'Net saved' : 'Net cost so far', tokens(Math.abs(net))),
+    row(net >= 0 ? 'Net saved' : 'Net cost so far', `${tokens(Math.abs(net))}  (at most ${most >= 0 ? tokens(most) : 'nothing'})`),
     '',
     `How it is worked out: every request to ${model} carries the whole conversation. After a wash, each request in the fresh session starts from the brief instead of the old conversation, and the difference is context that was not sent again. Counting stops where the old session would have compacted on its own.`,
+    `You would not have gone on forever in the old session, so the main figure counts only the first ${percent(sum.share ?? 2 / 3)} of the prompts after each wash. That share starts at two-thirds and is learned from how far your own sessions go (${sum.learnedFrom ?? 0} so far). Files the fresh session had to read again are taken off. "At most" counts every prompt.`,
     model === 'Claude'
       ? 'Claude caches repeated context and charges about a tenth for it, so in money terms the saving is roughly a tenth of these numbers.'
       : 'Repeated context is cached and charged at about a tenth, so in money terms the saving is roughly a tenth of these numbers.',
@@ -57,6 +72,7 @@ export const FORM = {
     washes: 'entry.822622585',
     prompts: 'entry.93311455',
     notResent: 'entry.1048114223',
+    likely: 'entry.1068811941',
     briefCost: 'entry.164624594',
   },
 };
@@ -72,6 +88,7 @@ export function sharePayload(sum, { shareId, version, platform = process.platfor
     washes: sum.washes,
     prompts: sum.prompts,
     notResent: sum.notResent,
+    likely: sum.likely ?? sum.notResent,
     briefCost: sum.briefCost,
   };
 }
@@ -83,7 +100,8 @@ const LABELS = {
   days: 'Days since first brief',
   washes: 'Briefs written',
   prompts: 'Prompts in fresh sessions',
-  notResent: 'Context not re-sent',
+  notResent: 'Context not re-sent, at most',
+  likely: 'Context not re-sent, likely',
   briefCost: 'Spent writing briefs',
 };
 

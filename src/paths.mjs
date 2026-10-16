@@ -60,3 +60,7 @@ export const legacyCommandPath = (env = process.env) => join(claudeConfigDir(env
 export const codexHooksPath = (env = process.env) => join(codexHome(env), 'hooks.json');
 export const codexSkillDir = (env = process.env) => join(codexHome(env), 'skills', 'wash');
 export const codexConfigPath = (env = process.env) => join(codexHome(env), 'config.toml');
+
+// What Carwash has learned about how far sessions usually go: a few numbers
+// per transcript, so the transcripts need not be read again.
+export const habitsPath = (env = process.env) => join(carwashHome(env), 'habits.json');

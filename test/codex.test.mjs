@@ -412,13 +412,13 @@ test('a fresh Codex session is measured request by request against the old one',
     line('compacted', { message: 'summary' }),
     request(5000, 'r4'),
   ].join('\n');
-  assert.deepEqual(measureCodex(text, 100_000, 258_400), { prompts: 2, requests: 3, start: 15_000, saved: 3 * 85_000 });
+  assert.deepEqual(measureCodex(text, 100_000, 258_400), { prompts: 2, requests: 3, start: 15_000, saved: 3 * 85_000, turns: [[2, 0], [1, 0]] });
   // Older Codex: token_count events and user_message events.
   const older = [line('event_msg', { type: 'user_message', message: 'go' }), reading(20_000), reading(30_000)].join('\n');
-  assert.deepEqual(measureCodex(older, 100_000, 258_400), { prompts: 1, requests: 2, start: 20_000, saved: 160_000 });
+  assert.deepEqual(measureCodex(older, 100_000, 258_400), { prompts: 1, requests: 2, start: 20_000, saved: 160_000, turns: [[2, 0]] });
   // Counting stops where the old session would have compacted on its own.
   assert.equal(measureCodex([reading(20_000), reading(150_000)].join('\n'), 100_000, 200_000).requests, 1);
-  assert.deepEqual(measureCodex('', 100_000, 200_000), { prompts: 0, requests: 0, start: null, saved: 0 });
+  assert.deepEqual(measureCodex('', 100_000, 200_000), { prompts: 0, requests: 0, start: null, saved: 0, turns: [] });
 });
 
 test('the ledger reads each delivery with its own tool, and stats name the right model', () => {
@@ -430,7 +430,7 @@ test('the ledger reads each delivery with its own tool, and stats name the right
   const [entry] = refreshLedger(env, { now: NOW + 2 * HOUR, force: true });
   assert.equal(entry.tool, 'codex');
   assert.equal(entry.deliveries[0].tool, 'codex');
-  assert.deepEqual({ ...entry.deliveries[0].measured, mtime: 0, at: 0 }, { prompts: 1, requests: 1, start: 16_000, saved: 84_000, mtime: 0, at: 0 });
+  assert.deepEqual({ ...entry.deliveries[0].measured, mtime: 0, at: 0 }, { prompts: 1, requests: 1, start: 16_000, saved: 84_000, turns: [[1, 0]], method: 2, mtime: 0, at: 0 });
   const sum = totals(readLedger(env), NOW + 2 * HOUR);
   assert.deepEqual(sum.tools, ['codex']);
   const report = statsReport(sum);

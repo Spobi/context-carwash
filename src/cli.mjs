@@ -7,8 +7,7 @@ import { UserError } from './install/settings.mjs';
 import { isNewer, latestVersion, runRelease } from './install/update.mjs';
 import { errorLogPath, installRecordPath, welcomedPath } from './paths.mjs';
 import { readJson } from './files.mjs';
-import { refreshLedger, totals } from './stats/ledger.mjs';
-import { FORM, describeShare, sendShare, shareId, sharePayload, shareReady, statsReport } from './stats/report.mjs';
+import { FORM, describeShare, sendShare, shareId, sharePayload, shareReady, statsReport, currentTotals } from './stats/report.mjs';
 import { render } from './statusline/render.mjs';
 import { statusline } from './statusline/run.mjs';
 import { runHook } from './wash/hooks.mjs';
@@ -169,7 +168,7 @@ export async function main(argv, { env = process.env, stdin = process.stdin, std
         return 0;
       }
       case 'stats': {
-        const sum = totals(refreshLedger(env, { force: true }));
+        const sum = currentTotals(env);
         stdout.write(statsReport(sum) + '\n');
         if (!rest.includes('--share')) return 0;
         stdout.write('\n');
