@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.2
 
 - `carwash stats` leads with a likelier saving and shows the old figure as the most it could be. It counts only the first part of the prompts after each wash, since you would have cleared the old conversation at some point anyway. That share starts at two-thirds and is learned from how far your own Claude Code conversations go, read on your machine. Output the fresh conversation had to read again, which the old one already had, is taken off.
 - `stats --share` sends the likely figure as well as the full one.
