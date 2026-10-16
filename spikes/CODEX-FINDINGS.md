@@ -26,7 +26,7 @@ Nothing here was run on Linux or Windows.
 
 ## Not verified
 
-- Anything on Linux or Windows. The Windows parent lookup (one PowerShell call) is covered only by the automated tests on GitHub's Windows runner.
+- Anything on Linux or Windows. The Windows parent lookup (one PowerShell run) is covered only by the automated tests on GitHub's Windows runner, where a cold PowerShell with `Get-CimInstance` took about 5 seconds and once ran past a 5-second limit. It now uses `[wmi]`, allows 10 seconds, and Codex's hooks only run it when a brief or the welcome is at stake.
 - A brief over Codex's 2,500-token default inline limit: `additionalContextLimit: 0` is set so it passes whole, per the docs, but no brief that long was delivered.
 - The Codex IDE extension and desktop app, which share `~/.codex` and run hooks through the app server.
 - The trust hash: Codex hashes a TOML form of the hook, so doctor only checks that an approval exists for each of Carwash's hooks, not that it matches.

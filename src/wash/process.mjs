@@ -61,17 +61,20 @@ export function processInfo(pid, platform = process.platform) {
 }
 
 // Windows has no quick `ps`, so one PowerShell run reads a process and the
-// few above it, and the answers are kept for the rest of this hook call.
+// few above it, and the answers are kept for the rest of this hook call. It is
+// slow, so Codex's hooks only ask when a brief is at stake.
 const windowsSeen = new Map();
 function windowsInfo(pid) {
   if (windowsSeen.has(pid)) return windowsSeen.get(pid);
   windowsSeen.set(pid, null);
+  // [wmi] reads straight from WMI, without loading the CIM cmdlets first.
   const script =
     `$p=${Number(pid)};$o=@();for($i=0;$i -lt 4 -and $p;$i++){` +
-    '$w=Get-CimInstance Win32_Process -Filter "ProcessId=$p";if(-not $w){break};' +
+    'try{$w=[wmi]"Win32_Process.Handle=\'$p\'"}catch{break};' +
     '$o+=[pscustomobject]@{pid=[int]$p;ppid=[int]$w.ParentProcessId;name=[string]$w.Name;cmd=[string]$w.CommandLine};$p=$w.ParentProcessId};' +
     'ConvertTo-Json -Compress -InputObject @($o)';
-  const result = spawnSync('powershell', ['-NoProfile', '-NonInteractive', '-Command', script], { encoding: 'utf8', timeout: 5000, windowsHide: true });
+  // A cold PowerShell can take seconds; the hooks allow 20.
+  const result = spawnSync('powershell', ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', script], { encoding: 'utf8', timeout: 10_000, windowsHide: true });
   if (result.status !== 0) return null;
   for (const row of [JSON.parse(result.stdout)].flat()) {
     if (!Number.isInteger(row?.pid)) continue;

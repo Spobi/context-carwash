@@ -62,6 +62,12 @@ function quietly(ctx, fn) {
   }
 }
 
+// A question asked at most once per hook call.
+const once = (ask) => {
+  let answer;
+  return () => (answer ??= ask());
+};
+
 const cwdOf = (payload) => (typeof payload.cwd === 'string' && payload.cwd ? payload.cwd : process.cwd());
 
 // --- /wash ---------------------------------------------------------------
@@ -241,8 +247,10 @@ function deliver(record, payload, ctx) {
 // marker is the claim, so two sessions starting together cannot both say it.
 // Uninstall deletes the marker with the rest of ~/.carwash, so a reinstall
 // says it again. Without an install record there is nobody to welcome.
-function welcome({ env, now, tool }) {
-  if (!existsSync(installRecordPath(env))) return null;
+function welcome(ctx) {
+  const { env, now, tool } = ctx;
+  if (!existsSync(installRecordPath(env)) || existsSync(welcomedPath(env, tool))) return null;
+  if (ctx.unattended()) return null;
   try {
     writeFileSync(welcomedPath(env, tool), `${new Date(now).toISOString()}\n`, { flag: 'wx', mode: 0o600 });
   } catch {
@@ -256,7 +264,10 @@ function onSessionStart(payload, ctx) {
   // Only a brand-new conversation gets a brief; a resumed, compacted or
   // forked one already has its own history.
   if (payload.source !== 'startup' && payload.source !== 'clear') return null;
-  if (ctx.unattended()) return null;
+  // Claude Code says in its environment whether anyone is there. Codex has to
+  // be asked through its command line, which on Windows takes a PowerShell
+  // run, so it is asked only once a brief or the welcome is at stake.
+  if (ctx.tool === 'claude' && ctx.unattended()) return null;
   // The welcome waits for a start that has nothing else to say.
   const result = briefAtStart(payload, ctx) ?? welcome(ctx);
   quietly(ctx, () => ctx.checkUpdates?.());
@@ -278,7 +289,7 @@ function briefAtStart(payload, ctx) {
     const named = ready.find((record) => record.id === env.CARWASH_PENDING);
     return named ? deliver(named, payload, ctx) : null;
   }
-  if (!ready.length) return null;
+  if (!ready.length || ctx.unattended()) return null;
 
   if (payload.source === 'clear') {
     // /clear keeps the process, so the brief this terminal asked for is the
@@ -337,7 +348,7 @@ export function runHook({ input, tool = 'claude', env = process.env, platform = 
     onError,
     checkUpdates,
     version,
-    unattended: isUnattended ?? (() => (codex ? codexUnattended(self.args) : unattended(env))),
+    unattended: once(isUnattended ?? (() => (codex ? codexUnattended(self.args) : unattended(env)))),
     // How much context the session is using. Claude Code's status line notes
     // it as it draws the meter; Codex writes it into its session file.
     usage: usage ?? ((p) => (codex ? readCodexUsage(p.transcript_path) : loadUsage(env, p.session_id))),

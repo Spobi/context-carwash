@@ -197,6 +197,27 @@ test('a scripted Codex run never uses up a brief', () => {
   assert.match(start('startup', { me: { pid: 3001, start: 'x' } }).systemMessage, /Loaded your Carwash brief/);
 });
 
+test('a Codex session start asks whether a script is running only when something is at stake', () => {
+  const { env, wash, start, ready } = sandbox();
+  let asked = 0;
+  const unattended = () => (asked++, false);
+  // Nothing waiting and no install, so no welcome: no question.
+  assert.equal(start('startup', { unattended }), null);
+  assert.equal(start('clear', { unattended }), null);
+  assert.equal(asked, 0);
+  // The welcome is at stake once, then never again.
+  mkdirSync(env.CARWASH_HOME, { recursive: true });
+  writeFileSync(join(env.CARWASH_HOME, 'install.json'), '{}');
+  assert.match(start('startup', { unattended }).systemMessage, /installed ✓/);
+  assert.equal(start('startup', { unattended }), null);
+  assert.equal(asked, 1);
+  // A brief is waiting: asked once, however many times it is needed.
+  wash('light', { me: B });
+  assert.match(start('startup', { me: { pid: 3001, start: 'x' }, unattended }).systemMessage, /Loaded your Carwash brief/);
+  assert.equal(asked, 2);
+  assert.equal(ready().length, 0);
+});
+
 test('Codex and Claude Code each say hello once', () => {
   const { env, start } = sandbox();
   mkdirSync(env.CARWASH_HOME, { recursive: true });
