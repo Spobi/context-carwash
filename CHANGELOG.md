@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.3
+
+- A fresh session can now search the old conversation. When a brief is saved, Carwash keeps a text copy of the conversation in `~/.carwash/recall`, without images, and tells the fresh session where it is, so it can look up an exact error message, path or number the brief left out. The copy is deleted after 7 days, or when you discard the brief. Nothing goes in your project.
+- `install` adds one permission to `~/.claude/settings.json` so Claude can search that folder without asking. It allows reading that folder and nothing else, and `uninstall` takes it out. `carwash doctor` checks it. Run `npx context-carwash@latest install` to get it.
+- `carwash stats` now gives the right cached price on Claude: a twentieth of the normal input price on Opus 5.5 and Sonnet 5.5, not a tenth.
+
 ## 0.2.2
 
 - `carwash stats` leads with a likelier saving and shows the old figure as the most it could be. It counts only the first part of the prompts after each wash, since you would have cleared the old conversation at some point anyway. That share starts at two-thirds and is learned from how far your own Claude Code conversations go, read on your machine. Output the fresh conversation had to read again, which the old one already had, is taken off.

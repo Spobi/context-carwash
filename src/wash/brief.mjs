@@ -1,4 +1,5 @@
 import { CHARS_PER_TOKEN, capFor } from '../levels.mjs';
+import { RECALL_DAYS } from '../paths.mjs';
 import { colorAt, paint } from '../statusline/color.mjs';
 import { formatTokens } from '../statusline/render.mjs';
 import { toolInfo, toolOf } from '../tools.mjs';
@@ -183,6 +184,7 @@ export function helpMessage(used, footer = null, tool = 'claude') {
     ...(meter ? ["The status line shows how many tokens this conversation is using, and the bar shows how close that is to the model's limit."] : []),
     ...(replyMeter ? ["The line after each reply shows how many tokens this conversation is using, and the bar shows how close that is to the model's limit. It is shown to you only and costs no tokens."] : []),
     `Writing a brief is an ordinary ${model} reply, so it uses tokens. help, discard and load do not.`,
+    `The old conversation is also saved as plain text for ${RECALL_DAYS} days, so the fresh session can search it for an exact detail the brief left out.`,
     ...(footer ? ['', footer] : []),
   ].join('\n');
 }
@@ -202,11 +204,15 @@ export function pointerMessage(records, now, why, tool = 'claude') {
 // What the fresh session's model is given. The framing is kept short: when the
 // whole thing is over Claude Code's limit for hook output, only the first 2,000
 // characters arrive inline, and the brief's Core section has to be among them.
-export function composeContext(record, now, stale) {
+// `recall` is the saved copy of the earlier conversation, when there is one.
+export function composeContext(record, now, stale, recall = null) {
+  const earlier = recall
+    ? `The brief is a summary; the earlier conversation is saved as plain text at ${recall}. When you need an exact detail it leaves out (an error message, path, number, command, or what the user said), search that file with grep instead of guessing, writing its full path in each command rather than in a shell variable. Do not read it whole.`
+    : 'The earlier conversation is not available to you.';
   return [
     '# Carwash handoff',
     '',
-    `The user ran ${toolInfo(toolOf(record)).wash} in an earlier session and started this one to carry on from it. The brief below (${record.level}, written ${ageOf(record, now)}) is what that session handed over. The earlier conversation is not available to you.`,
+    `The user ran ${toolInfo(toolOf(record)).wash} in an earlier session and started this one to carry on from it. The brief below (${record.level}, written ${ageOf(record, now)}) is what that session handed over. ${earlier}`,
     'If the brief is cut off below, or a note says the full text was saved to a file, read that file in full before you reply.',
     'Check the current state of a file before acting on what the brief says about it.',
     ...(stale ? [stale] : []),

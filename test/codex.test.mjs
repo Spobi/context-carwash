@@ -11,6 +11,7 @@ import { applyInstall, applyUninstall, describeInstall, describeUninstall, isCar
 import { UserError } from '../src/install/settings.mjs';
 import { measureCodex, readLedger, refreshLedger, totals } from '../src/stats/ledger.mjs';
 import { statsReport } from '../src/stats/report.mjs';
+import { recallFile } from '../src/paths.mjs';
 import { replyMeterMessage } from '../src/wash/brief.mjs';
 import { runHook } from '../src/wash/hooks.mjs';
 import { codexProcess, codexSubcommand, codexUnattended, processInfo } from '../src/wash/process.mjs';
@@ -656,4 +657,34 @@ test('command line: install covers Codex, and the installed Codex hook runs as C
   assert.equal(run('uninstall', '--yes').status, 0);
   assert.equal(existsSync(hooksFile), false);
   assert.deepEqual(readdirSync(env.CODEX_HOME).filter((name) => name !== 'skills'), []);
+});
+
+test('a Codex session is copied as text too, up to the $wash', () => {
+  const { env, transcript, wash, start, ready } = sandbox();
+  const item = (payload) => line('response_item', payload);
+  const said = (role, text) => item({ type: 'message', role, content: [{ type: role === 'assistant' ? 'output_text' : 'input_text', text }] });
+  writeFileSync(
+    transcript,
+    [
+      line('session_meta', { id: 'T1' }),
+      said('developer', 'house rules'),
+      said('user', 'Why does login loop?'),
+      item({ type: 'reasoning', summary: [{ type: 'summary_text', text: 'Check the cookie.' }], encrypted_content: 'SEALED' }),
+      item({ type: 'function_call', name: 'shell', arguments: '{"cmd":"npm test"}', call_id: 'c1' }),
+      item({ type: 'function_call_output', call_id: 'c1', output: 'E_SESSION_4217' }),
+      item({ type: 'custom_tool_call', name: 'apply_patch', input: '*** Update File: src/auth.js', call_id: 'c2' }),
+      item({ type: 'custom_tool_call_output', call_id: 'c2', output: [{ type: 'input_text', text: 'patched' }] }),
+      said('assistant', 'The cookie expires early.'),
+      reading(100_000),
+      said('user', '$wash light'),
+      said('assistant', BRIEF),
+    ].join('\n') + '\n',
+  );
+  wash('light');
+  const copy = recallFile(env, ready()[0].id);
+  const text = readFileSync(copy, 'utf8');
+  for (const kept of ['Why does login loop?', 'Check the cookie.', 'tool call shell', 'npm test', 'E_SESSION_4217', 'tool call apply_patch', 'patched', 'The cookie expires early.']) assert.ok(text.includes(kept), kept);
+  for (const left of ['house rules', 'SEALED', 'token_count', '$wash light', 'Fix login redirect']) assert.ok(!text.includes(left), left);
+  assert.match(text, /^A text copy of an earlier Codex session, saved when \$wash wrote its brief\./);
+  assert.ok(start('clear').hookSpecificOutput.additionalContext.includes(copy));
 });

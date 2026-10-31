@@ -7,7 +7,7 @@ metadata:
   installed-by: context-carwash
 ---
 
-The user typed /wash. They want to start a fresh session that picks up where this one leaves off. Your whole reply to this message is saved as the handoff brief, and it is the first thing the next session reads. That session cannot see this conversation, so anything the brief leaves out is gone.
+The user typed /wash. They want to start a fresh session that picks up where this one leaves off. Your whole reply to this message is saved as the handoff brief, and it is the first thing the next session reads. That session cannot see this conversation. It can search a saved copy for an exact detail, but only if it knows to look, so the brief has to stand on its own.
 
 Arguments: $ARGUMENTS
 

@@ -9,7 +9,7 @@ The user typed $wash. Context Carwash saves your reply as a handoff brief, but o
 
 **First, look for that message.** If this turn has no developer message starting with "Carwash: level", the hooks are not running and a brief would be lost. Then do not write a brief. Reply with only this: "Carwash's hooks aren't running in Codex yet, so no brief was saved. Restart Codex and choose "Trust all and continue" when it asks about hooks, then run $wash again. If that doesn't help, run `npx context-carwash doctor` in a terminal."
 
-When the message is there: the user wants to start a fresh session that picks up where this one leaves off. Your whole reply to this message is saved as the handoff brief, and it is the first thing the next session reads. That session cannot see this conversation, so anything the brief leaves out is gone.
+When the message is there: the user wants to start a fresh session that picks up where this one leaves off. Your whole reply to this message is saved as the handoff brief, and it is the first thing the next session reads. That session cannot see this conversation. It can search a saved copy for an exact detail, but only if it knows to look, so the brief has to stand on its own.
 
 The words after $wash in the user's message are the arguments. The first word is the level: `light`, `mid`, or `detailed`. No arguments means `mid`. Anything after the level is the user's note on what to emphasise.
 

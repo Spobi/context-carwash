@@ -7,7 +7,7 @@ import { errorLogPath, errorsSeenPath, installRecordPath, settingsPath, skillDir
 import { refreshLedger, totals } from '../stats/ledger.mjs';
 import { readyRecords } from '../wash/store.mjs';
 import { codexDetected, codexHooksCheck, codexSkillInstalled } from './codex.mjs';
-import { commandProgram, isCarwashCommand, isCarwashHook } from './install.mjs';
+import { commandProgram, isCarwashCommand, isCarwashHook, recallRule } from './install.mjs';
 import { UPDATE_COMMAND } from './notice.mjs';
 import { readSettings, resolveSettingsFile } from './settings.mjs';
 import { isNewer } from './update.mjs';
@@ -77,7 +77,8 @@ function settingsCheck(env) {
   const hooks = Object.fromEntries(HOOK_EVENTS.map((event) => [event, groups(event).some((group) => Array.isArray(group?.hooks) && group.hooks.some((hook) => isCarwashHook(hook?.command)))]));
   const hookCommands = HOOK_EVENTS.flatMap((event) => groups(event).flatMap((group) => (Array.isArray(group?.hooks) ? group.hooks.map((hook) => hook?.command) : [])));
   const ours = [data?.statusLine?.command, ...hookCommands].filter((command) => isCarwashCommand(command) || isCarwashHook(command));
-  return { readable: true, statusLine: isCarwashCommand(data?.statusLine?.command), hooks, nodes: [...new Set(ours.map(commandProgram).filter(Boolean))] };
+  const allow = data?.permissions?.allow;
+  return { readable: true, statusLine: isCarwashCommand(data?.statusLine?.command), hooks, recall: Array.isArray(allow) && allow.includes(recallRule(env)), nodes: [...new Set(ours.map(commandProgram).filter(Boolean))] };
 }
 
 // The Node that Carwash's commands start. Install writes its path into the
@@ -135,6 +136,7 @@ export function doctorReport({ env = process.env, now = Date.now(), running, new
       } else {
         out.push(row('Status line', yes(check.statusLine)));
         out.push(row('Hooks', HOOK_EVENTS.map((event) => `${event} ${yes(check.hooks[event])}`).join(' · ')));
+        out.push(row('Session search', check.recall ? 'ok' : `MISSING: Claude will ask before searching an old session · to fix: ${UPDATE_COMMAND}`));
         nodes.push(...check.nodes);
       }
       out.push(row('/wash command', yes(existsSync(join(skillDir(env), 'SKILL.md')))));

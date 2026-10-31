@@ -31,6 +31,12 @@ export const consumedDir = (env = process.env) => join(carwashHome(env), 'consum
 // Small per-session notes: the last usage reading and a wash in progress.
 export const sessionsDir = (env = process.env) => join(carwashHome(env), 'sessions');
 
+// A text copy of the session each brief came from, for the fresh session to
+// search. Kept for a week.
+export const RECALL_DAYS = 7;
+export const recallDir = (env = process.env) => join(carwashHome(env), 'recall');
+export const recallFile = (env, id) => join(recallDir(env), `${id}.log`);
+
 // The savings ledger behind `carwash stats`: one file per brief written.
 export const statsDir = (env = process.env) => join(carwashHome(env), 'stats');
 

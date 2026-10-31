@@ -51,7 +51,7 @@ export function statsReport(sum, { inClaude = false } = {}) {
     `How it is worked out: every request to ${model} carries the whole conversation. After a wash, each request in the fresh session starts from the brief instead of the old conversation, and the difference is context that was not sent again. Counting stops where the old session would have compacted on its own.`,
     `You would not have gone on forever in the old session, so the main figure counts only the first ${percent(sum.share ?? 2 / 3)} of the prompts after each wash. That share starts at two-thirds and is learned from how far your own sessions go (${sum.learnedFrom ?? 0} so far). Files the fresh session had to read again are taken off. "At most" counts every prompt.`,
     model === 'Claude'
-      ? 'Claude caches repeated context and charges about a tenth for it, so in money terms the saving is roughly a tenth of these numbers.'
+      ? 'Claude caches repeated context and charges far less for it: a twentieth of the normal input price on Opus 5.5 and Sonnet 5.5, a tenth on most older models. In money terms the saving is that share of these numbers.'
       : 'Repeated context is cached and charged at about a tenth, so in money terms the saving is roughly a tenth of these numbers.',
     '',
     inClaude ? 'To share these totals anonymously, run in a terminal: npx context-carwash stats --share' : 'To share these totals anonymously: npx context-carwash stats --share',

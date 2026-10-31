@@ -1,8 +1,8 @@
 import { randomBytes } from 'node:crypto';
-import { existsSync, readdirSync, renameSync, statSync, unlinkSync } from 'node:fs';
+import { existsSync, readdirSync, renameSync, rmSync, statSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { privateDir, readJson, writePrivateJson } from '../files.mjs';
-import { consumedDir, pendingDir, sessionsDir } from '../paths.mjs';
+import { RECALL_DAYS, consumedDir, pendingDir, recallDir, recallFile, sessionsDir } from '../paths.mjs';
 
 // The store of handoff briefs. One JSON file per brief, outside any project:
 // pending/ holds briefs waiting for a fresh session, consumed/ holds delivered
@@ -62,7 +62,9 @@ export function updateRecord(env, record) {
   if (existsSync(file)) writePrivateJson(file, record);
 }
 
+// Drop a waiting brief, and the copy of its session along with it.
 export function removeRecord(env, id) {
+  rmSync(recallFile(env, id), { force: true });
   try {
     unlinkSync(fileIn(pendingDir(env), id));
     return true;
@@ -132,7 +134,7 @@ function sweep(dir, isDue) {
 }
 
 // Delete what has outlived its use: expired briefs, delivered briefs past
-// their retention, old session notes, and stray files.
+// their retention, old session notes and copies, and stray files.
 export function purge(env, now = Date.now()) {
   const setting = (env.CARWASH_RETAIN_HOURS ?? '').trim();
   const retainMs = (setting !== '' && Number(setting) >= 0 ? Number(setting) : RETAIN_HOURS) * HOUR;
@@ -148,4 +150,5 @@ export function purge(env, now = Date.now()) {
     return Number.isFinite(consumed) ? now - consumed > retainMs : stale(file, HOUR);
   });
   sweep(sessionsDir(env), (file) => stale(file, SESSION_NOTE_MS));
+  sweep(recallDir(env), (file) => stale(file, RECALL_DAYS * 24 * HOUR));
 }

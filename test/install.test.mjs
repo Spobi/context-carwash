@@ -5,7 +5,8 @@ import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { applyInstall, applyUninstall, commandProgram, describeInstall, describeUninstall, isCarwashCommand, isCarwashHook, planInstall, planUninstall, statusLineCommand, withoutCarwashHooks } from '../src/install/install.mjs';
+import { doctorReport } from '../src/install/doctor.mjs';
+import { applyInstall, applyUninstall, commandProgram, describeInstall, describeUninstall, isCarwashCommand, isCarwashHook, planInstall, planUninstall, recallRule, statusLineCommand, withoutCarwashHooks } from '../src/install/install.mjs';
 import { UserError } from '../src/install/settings.mjs';
 
 const BIN = fileURLToPath(new URL('../bin/carwash.mjs', import.meta.url));
@@ -41,7 +42,7 @@ test('fresh machine: install creates the setting, uninstall removes every trace'
   assert.match(describeInstall(planInstall({ env })), /Create .*settings\.json/);
   install(env);
   const settings = json(file);
-  assert.deepEqual(Object.keys(settings), ['statusLine', 'hooks']);
+  assert.deepEqual(Object.keys(settings), ['statusLine', 'hooks', 'permissions']);
   assert.equal(settings.statusLine.type, 'command');
   assert.equal(settings.statusLine.refreshInterval, 5);
   assert.ok(isCarwashCommand(settings.statusLine.command));
@@ -108,7 +109,7 @@ test('an existing status line is wrapped, not replaced, and restored exactly', (
   install(env);
 
   const settings = json(file);
-  assert.deepEqual(Object.keys(settings), ['statusLine', 'model', 'hooks']);
+  assert.deepEqual(Object.keys(settings), ['statusLine', 'model', 'hooks', 'permissions']);
   assert.ok(isCarwashCommand(settings.statusLine.command));
   assert.equal(settings.statusLine.padding, 2);
   assert.equal(settings.statusLine.refreshInterval, 5);
@@ -178,7 +179,7 @@ test('hooks the user already has are kept, in place, and ours go after them', ()
   install(env);
 
   const settings = json(file);
-  assert.deepEqual(Object.keys(settings), ['hooks', 'model', 'statusLine']);
+  assert.deepEqual(Object.keys(settings), ['hooks', 'model', 'statusLine', 'permissions']);
   assert.deepEqual(Object.keys(settings.hooks), ['Stop', 'PreToolUse', 'SessionStart', 'UserPromptExpansion']);
   assert.deepEqual(settings.hooks.PreToolUse, original.hooks.PreToolUse);
   assert.deepEqual(settings.hooks.Stop[0], original.hooks.Stop[0]);
@@ -428,4 +429,50 @@ test('command line: install asks first, and the installed status line runs', () 
 
   assert.equal(run('--version').stdout.trim(), JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version);
   assert.equal(run('nonsense').status, 2);
+});
+
+test('install lets Claude read the saved sessions, and nothing else', () => {
+  assert.equal(recallRule({ CARWASH_HOME: join(homedir(), '.carwash') }), 'Read(~/.carwash/recall/**)');
+  if (posix) assert.equal(recallRule({ CARWASH_HOME: '/opt/wash' }), 'Read(//opt/wash/recall/**)');
+
+  const { env, file } = sandbox('{ "permissions": { "allow": ["Bash(ls:*)"], "deny": ["Read(./.env)"] } }');
+  const rule = recallRule(env);
+  assert.match(describeInstall(planInstall({ env })), /Lets Claude read .*recall without asking, and nothing else/);
+  install(env);
+  assert.deepEqual(json(file).permissions, { allow: ['Bash(ls:*)', rule], deny: ['Read(./.env)'] });
+
+  // Installing again does not add it twice.
+  install(env);
+  assert.deepEqual(json(file).permissions.allow, ['Bash(ls:*)', rule]);
+
+  // Edited since install, uninstall takes out only its own rule.
+  writeFileSync(file, JSON.stringify({ ...json(file), theme: 'dark' }));
+  assert.match(describeUninstall(planUninstall({ env })), /status line, hooks and read rule/);
+  uninstall(env);
+  assert.deepEqual(json(file), { permissions: { allow: ['Bash(ls:*)'], deny: ['Read(./.env)'] }, theme: 'dark' });
+});
+
+test('uninstall leaves no empty permissions behind, and a setting Carwash cannot read is left alone', () => {
+  const { env, file } = sandbox('{ "model": "opus" }');
+  install(env);
+  writeFileSync(file, JSON.stringify({ ...json(file), theme: 'dark' }));
+  uninstall(env);
+  assert.deepEqual(json(file), { model: 'opus', theme: 'dark' });
+
+  for (const permissions of ['"all"', '{ "allow": "everything" }']) {
+    const odd = sandbox(`{ "permissions": ${permissions} }`);
+    assert.doesNotMatch(describeInstall(planInstall({ env: odd.env })), /Lets Claude read/);
+    install(odd.env);
+    assert.deepEqual(json(odd.file).permissions, JSON.parse(permissions));
+  }
+});
+
+test('doctor says whether Claude can search old sessions without asking', () => {
+  const { env, file } = sandbox();
+  install(env);
+  const report = () => doctorReport({ env, running: '0.0.0', newest: null, claude: null });
+  assert.match(report(), /Session search\s+ok/);
+  const { permissions, ...rest } = json(file);
+  writeFileSync(file, JSON.stringify(rest));
+  assert.match(report(), /Session search\s+MISSING: Claude will ask before searching an old session/);
 });

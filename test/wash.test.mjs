@@ -2,11 +2,12 @@ import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { packageVersion } from '../src/install/install.mjs';
 import { capFor, estimateTokens } from '../src/levels.mjs';
+import { recallFile } from '../src/paths.mjs';
 import { render } from '../src/statusline/render.mjs';
 import { statusline } from '../src/statusline/run.mjs';
 import { washState } from '../src/statusline/state.mjs';
@@ -14,6 +15,7 @@ import { visibleWidth } from '../src/statusline/terminal.mjs';
 import { cleanTitle, composeContext, formatAge, parseReply, stalenessLine } from '../src/wash/brief.mjs';
 import { runHook } from '../src/wash/hooks.mjs';
 import { isRunning, processStart, sameProcess } from '../src/wash/process.mjs';
+import { saveRecall } from '../src/wash/recall.mjs';
 import { currentWash, loadUsage, saveUsage } from '../src/wash/session.mjs';
 import { claim, purge, readyRecords } from '../src/wash/store.mjs';
 
@@ -50,7 +52,7 @@ function sandbox() {
   const slash = (args, options = {}) =>
     hook({ hook_event_name: 'UserPromptExpansion', command_name: 'wash', command_args: args, session_id: options.session ?? 'S1', prompt_id: options.prompt ?? 'P1', cwd: options.cwd ?? cwd }, options);
   const stop = (message, options = {}) =>
-    hook({ hook_event_name: 'Stop', last_assistant_message: message, session_id: options.session ?? 'S1', prompt_id: options.prompt ?? 'P1', transcript_path: '/t/S1.jsonl', cwd: options.cwd ?? cwd }, options);
+    hook({ hook_event_name: 'Stop', last_assistant_message: message, session_id: options.session ?? 'S1', prompt_id: options.prompt ?? 'P1', transcript_path: options.transcript ?? '/t/S1.jsonl', cwd: options.cwd ?? cwd }, options);
   const start = (source, options = {}) =>
     hook({ hook_event_name: 'SessionStart', source, session_id: options.session ?? 'S2', cwd: options.cwd ?? cwd }, options);
   // A whole /wash: the command, then Claude's reply ending the turn.
@@ -486,6 +488,7 @@ test('/wash help explains the meter and the options without reaching Claude', ()
       '',
       "The status line shows how many tokens this conversation is using, and the bar shows how close that is to the model's limit.",
       'Writing a brief is an ordinary Claude reply, so it uses tokens. help, discard and load do not.',
+      'The old conversation is also saved as plain text for 7 days, so the fresh session can search it for an exact detail the brief left out.',
       '',
       `Carwash ${packageVersion()}. Something not working? Run in a terminal: npx context-carwash doctor`,
     ].join('\n'),
@@ -757,4 +760,112 @@ test('a failing hook logs privately and stays quiet', { skip: !posix }, () => {
   assert.equal(result.stdout, '');
   assert.equal(result.stderr, '');
   assert.match(readFileSync(join(env.CARWASH_HOME, 'errors.log'), 'utf8'), /^\d{4}-\d\d-\d\dT.*(ENOTDIR|EEXIST)/);
+});
+
+// A session as Claude Code writes it, ending with the /wash that wrote a brief.
+const row = (type, content, extra = {}) => JSON.stringify({ type, timestamp: '2026-10-13T11:00:00.000Z', message: { role: type, content }, ...extra });
+
+function sessionFile(root) {
+  const file = join(root, 'session.jsonl');
+  const lines = [
+    row('user', 'Why does login loop?'),
+    row('assistant', [{ type: 'thinking', thinking: 'Probably the session cookie.' }]),
+    row('assistant', [{ type: 'tool_use', name: 'Bash', input: { command: 'npm test' } }]),
+    row('user', [{ type: 'tool_result', is_error: true, content: 'Error: E_SESSION_4217 at src/auth/session.js:42' }]),
+    row('user', [{ type: 'tool_result', content: [{ type: 'text', text: 'a screenshot' }, { type: 'image', source: { data: 'QUJD'.repeat(1000) } }] }]),
+    row('user', 'a caveat from the tool', { isMeta: true }),
+    row('assistant', [{ type: 'text', text: 'a side quest' }], { isSidechain: true }),
+    row('assistant', [{ type: 'text', text: 'x'.repeat(4500) }]),
+    '{"type":"api-request","body":"not words"}',
+    'not json',
+    row('user', '<command-message>wash</command-message>\n<command-name>/wash</command-name>'),
+    row('assistant', [{ type: 'text', text: BRIEF }]),
+  ];
+  writeFileSync(file, lines.join('\n') + '\n');
+  return file;
+}
+
+test('a brief keeps a text copy of its session, and the fresh session is told where it is', () => {
+  const { root, env, wash, start, ready } = sandbox();
+  wash('mid', { transcript: sessionFile(root) });
+  const copy = recallFile(env, ready()[0].id);
+  const text = readFileSync(copy, 'utf8');
+
+  for (const kept of ['Why does login loop?', 'Probably the session cookie.', 'tool call Bash', 'npm test', 'E_SESSION_4217', 'a screenshot']) assert.ok(text.includes(kept), kept);
+  // Words only, up to the wash: no images, nothing hidden, and not the brief again.
+  for (const left of ['QUJD', 'a caveat', 'a side quest', 'not words', '<command-name>', 'Fix login redirect']) assert.ok(!text.includes(left), left);
+  assert.match(text, /^--- #1 user 2026-10-13T11:00:00\.000Z ---$/m);
+  assert.match(text, /^--- #\d+ tool result \(error\) /m);
+  // A long line is broken up, not cut, so one search hit stays small.
+  assert.ok(text.split('\n').every((line) => line.length <= 2000));
+  assert.ok(text.includes(`${'x'.repeat(2000)}\n${'x'.repeat(2000)}\n${'x'.repeat(500)}\n`));
+  if (posix) {
+    assert.equal(statSync(copy).mode & 0o777, 0o600);
+    assert.equal(statSync(dirname(copy)).mode & 0o777, 0o700);
+  }
+
+  const context = start('clear').hookSpecificOutput.additionalContext;
+  assert.ok(context.includes(copy));
+  assert.match(context, /search that file with grep instead of guessing/);
+  assert.doesNotMatch(context, /not available/);
+  assert.ok(context.endsWith(BRIEF));
+  // The brief's Core still lands inside what Claude Code previews.
+  assert.ok(context.indexOf('- Next:') < 1500);
+});
+
+test('with no copy of the session, a brief works as it always did', () => {
+  const { root, env, wash, start, ready, stop, slash } = sandbox();
+  // The session file is not there.
+  assert.match(wash('mid').systemMessage, /^Brief ready/);
+  assert.equal(existsSync(join(env.CARWASH_HOME, 'recall')), false);
+  assert.match(start('clear').hookSpecificOutput.additionalContext, /The earlier conversation is not available to you\./);
+
+  // It cannot be read: the brief is saved all the same.
+  slash('mid', { session: 'S3' });
+  assert.match(stop(BRIEF, { session: 'S3', transcript: root }).systemMessage, /^Brief ready/);
+  assert.equal(ready().length, 1);
+  assert.equal(start('clear', { session: 'S4' }).hookSpecificOutput.additionalContext.includes('search that file'), false);
+
+  // The copy went missing before the brief was delivered.
+  wash('mid', { session: 'S5', transcript: sessionFile(root) });
+  rmSync(recallFile(env, ready()[0].id));
+  assert.match(start('clear', { session: 'S6' }).hookSpecificOutput.additionalContext, /not available to you/);
+});
+
+test('a discarded or replaced brief takes its copy with it, and the rest go after a week', () => {
+  const { root, env, wash, slash, start, ready } = sandbox();
+  const transcript = sessionFile(root);
+  wash('mid', { transcript });
+  const first = recallFile(env, ready()[0].id);
+  assert.ok(existsSync(first));
+
+  // A later wash of the same session replaces the brief, and so its copy.
+  wash('mid', { transcript, prompt: 'P2' });
+  const second = recallFile(env, ready()[0].id);
+  assert.notEqual(second, first);
+  assert.equal(existsSync(first), false);
+
+  slash('discard');
+  assert.equal(existsSync(second), false);
+
+  // A delivered brief is gone within days; the copy stays useful for the week.
+  wash('mid', { transcript, prompt: 'P3' });
+  const third = recallFile(env, ready()[0].id);
+  start('clear');
+  const DAY = 24 * HOUR;
+  purge(env, Date.now() + 6 * DAY);
+  assert.ok(existsSync(third));
+  purge(env, Date.now() + 8 * DAY);
+  assert.equal(existsSync(third), false);
+});
+
+test('a very long session keeps its newest part', () => {
+  const { root, env } = sandbox();
+  const transcript = join(root, 'long.jsonl');
+  const huge = 'y'.repeat(10 * 1024 * 1024);
+  writeFileSync(transcript, [row('user', `oldest ${huge}`), row('user', `middle ${huge}`), row('assistant', 'newest')].join('\n') + '\n');
+  const text = readFileSync(saveRecall(env, 'abc123', transcript), 'utf8');
+  assert.ok(text.includes('The first entry is left out too'));
+  assert.ok(!text.includes('oldest'));
+  assert.ok(text.includes('middle') && text.includes('newest'));
 });

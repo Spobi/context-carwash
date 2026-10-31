@@ -93,7 +93,7 @@ export const sentOf = (usage) => (usage.input_tokens ?? 0) + (usage.cache_read_i
 
 const blocksOf = (line) => (Array.isArray(line.message?.content) ? line.message.content : []);
 
-const resultText = (block) =>
+export const resultText = (block) =>
   typeof block.content === 'string' ? block.content : Array.isArray(block.content) ? block.content.map((part) => (part?.type === 'text' ? part.text : '')).join('') : '';
 
 // Lines shorter than this are too common to say a file was read again.

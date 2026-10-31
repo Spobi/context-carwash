@@ -3,7 +3,7 @@ import { homedir } from 'node:os';
 import { delimiter, dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { privateDir, readJson, writeFileAtomic } from '../files.mjs';
-import { carwashHome, claudeConfigDir, installRecordPath, legacyCommandPath, pendingDir, settingsPath, skillDir } from '../paths.mjs';
+import { RECALL_DAYS, carwashHome, claudeConfigDir, installRecordPath, legacyCommandPath, pendingDir, recallDir, settingsPath, skillDir } from '../paths.mjs';
 import { applyCodexInstall, applyCodexUninstall, codexDetected, describeCodexInstall, describeCodexUninstall, planCodexInstall, planCodexUninstall } from './codex.mjs';
 import { UserError, readSettings, resolveSettingsFile, serializeSettings, sha256 } from './settings.mjs';
 
@@ -128,6 +128,37 @@ function withCarwashHooks(hooks, command, file) {
   return next;
 }
 
+// The one permission Carwash adds: reading the saved copies of old sessions, so
+// that a fresh session can search them without asking. A Read rule also covers
+// Grep and read-only shell commands such as grep, and it allows nothing else.
+export function recallRule(env = process.env) {
+  const posix = (path) => path.replace(/\\/g, '/').replace(/^([A-Za-z]):/, (_, drive) => `/${drive.toLowerCase()}`);
+  const dir = recallDir(env);
+  const path = dir.startsWith(homedir() + sep) ? `~/${posix(dir.slice(homedir().length + 1))}` : `/${posix(dir)}`;
+  return `Read(${path}/**)`;
+}
+
+// The `permissions` setting with that rule taken out. `allow`, or the whole
+// setting, goes too if it only existed to hold ours. Returns the same object
+// when the rule was not there.
+function withoutRecallRule(permissions, rule) {
+  if (!isPlainObject(permissions) || !Array.isArray(permissions.allow) || !permissions.allow.includes(rule)) return permissions;
+  const { allow, ...others } = permissions;
+  const theirs = allow.filter((entry) => entry !== rule);
+  const next = theirs.length ? { ...permissions, allow: theirs } : others;
+  return Object.keys(next).length ? next : undefined;
+}
+
+// The `permissions` setting with the rule added after whatever is there. One
+// Carwash cannot read is left as it is: a fresh session then asks before it
+// searches, which is all that is lost.
+function withRecallRule(permissions, rule) {
+  if (permissions !== undefined && !isPlainObject(permissions)) return permissions;
+  if (permissions?.allow !== undefined && !Array.isArray(permissions.allow)) return permissions;
+  const theirs = withoutRecallRule(permissions, rule);
+  return { ...theirs, allow: [...(theirs?.allow ?? []), rule] };
+}
+
 function isOurSkill(file) {
   try {
     return readFileSync(file, 'utf8').includes(SKILL_MARK);
@@ -207,14 +238,18 @@ function planClaudeInstall({ env, record, script }) {
   }
 
   const theirHooks = withoutCarwashHooks(settings.data.hooks);
+  const rule = recallRule(env);
+  const permissions = withRecallRule(settings.data.permissions, rule);
   const next = {
     ...settings.data,
     statusLine: { refreshInterval: REFRESH_SECONDS, ...(original ?? {}), type: 'command', command: commandFor('statusline', script) },
     hooks: withCarwashHooks(settings.data.hooks, commandFor('hook', script), file),
+    ...(permissions === undefined ? {} : { permissions }),
   };
   const skill = planSkill(env);
+  const recall = Array.isArray(permissions?.allow) && permissions.allow.includes(rule) ? recallDir(env) : null;
 
-  return { file, settings, claudeRecord: record, original, alreadyInstalled, next, skill, keepsHooks: isPlainObject(theirHooks) && Object.keys(theirHooks).length > 0 };
+  return { file, settings, claudeRecord: record, original, alreadyInstalled, next, skill, recall, keepsHooks: isPlainObject(theirHooks) && Object.keys(theirHooks).length > 0 };
 }
 
 export function describeInstall(plan) {
@@ -224,6 +259,7 @@ export function describeInstall(plan) {
   if (plan.codex) lines.push(...describeCodexInstall(plan.codex, plan.claude ? 4 : 2, plan.home));
   const model = plan.claude && plan.codex ? 'Claude or Codex' : plan.codex ? 'Codex' : 'Claude';
   lines.push('', `Writing a brief is an ordinary ${model} reply, so it uses tokens like any other.`);
+  lines.push(`Each brief also saves a text copy of the conversation in ${tilde(join(plan.home, 'recall'))} for ${RECALL_DAYS} days, so the fresh session can search it for exact details.`);
   // Version managers such as nvm keep a folder per Node version, so removing
   // an old version takes this path with it, and nothing of Carwash can start.
   if (plan.node) lines.push(`Carwash runs with the Node at ${tilde(plan.node)}. If you remove that Node later, for example an old version in nvm, run install again.`);
@@ -250,6 +286,7 @@ function describeClaudeInstall(plan) {
   }
   lines.push('       Adds three hooks, so /wash can save a brief and a fresh session can');
   lines.push(`       pick it up.${plan.keepsHooks ? ' The hooks you already have are kept as they are.' : ''}`);
+  if (plan.recall) lines.push(`       Lets Claude read ${tilde(plan.recall)} without asking, and nothing else.`);
   if (plan.settings.exists && !plan.claudeRecord) {
     lines.push(`       A backup of the file is kept in ${tilde(join(plan.home, 'backup'))}`);
   }
@@ -362,6 +399,12 @@ export function planUninstall({ env = process.env } = {}) {
         else data.hooks = hooks;
         changed = true;
       }
+      const permissions = withoutRecallRule(data.permissions, recallRule(env));
+      if (permissions !== data.permissions) {
+        if (permissions === undefined) delete data.permissions;
+        else data.permissions = permissions;
+        changed = true;
+      }
       if (changed) {
         plan.action = 'edit';
         plan.bytes = serializeSettings(data, settings);
@@ -395,7 +438,7 @@ export function describeUninstall(plan) {
   const what = {
     restore: `Restore ${tilde(plan.file)} to exactly what it was before install`,
     delete: `Delete ${tilde(plan.file)} (Carwash created it and it has not changed since)`,
-    edit: `Edit ${tilde(plan.file)}: undo Carwash's status line and hooks; your other changes stay`,
+    edit: `Edit ${tilde(plan.file)}: undo Carwash's status line, hooks and read rule; your other changes stay`,
     none: `Leave ${tilde(plan.file)} alone`,
   }[plan.action];
   const steps = [];

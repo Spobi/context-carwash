@@ -11,6 +11,7 @@ import { budgetNote, composeContext, describe, helpMessage, loadedMessage, parse
 import { isTool, toolInfo, toolOf } from '../tools.mjs';
 import { repoState, worktreeRoot } from './git.mjs';
 import { codexProcess, codexUnattended, currentProcess, isRunning, sameProcess } from './process.mjs';
+import { keptRecall, saveRecall } from './recall.mjs';
 import { readCodexReplyUsage, readCodexUsage, readCodexVersion } from './rollout.mjs';
 import { currentWash, endWash, loadUsage, startWash } from './session.mjs';
 import { AUTO_LOAD_MS, addRecord, claim, findRecords, purge, readyRecords, removeRecord, reopen, updateRecord } from './store.mjs';
@@ -236,6 +237,7 @@ function onStop(payload, ctx) {
     now,
   );
   quietly(ctx, () => recordWash(env, record, wash));
+  quietly(ctx, () => saveRecall(env, record.id, payload.transcript_path, ctx.tool));
   // One ready brief per terminal. An earlier wash of this same session is out
   // of date and goes; anything else this terminal held goes back to waiting.
   for (const other of readyRecords(env, now)) {
@@ -257,7 +259,7 @@ function deliver(record, payload, ctx) {
   const stale = stalenessLine(record.source, repoState(cwdOf(payload)));
   return {
     systemMessage: loadedMessage(record, now, stale, ctx.tool),
-    hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: composeContext(record, now, stale) },
+    hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: composeContext(record, now, stale, keptRecall(env, record.id)) },
   };
 }
 

@@ -25,7 +25,7 @@ It shows you what it's going to change and asks before doing anything. Then star
 
 When there's a new version, a line under the meter will tell you. To update, run `npx context-carwash@latest install`.
 
-Under the hood, it adds a status line and three hooks to `~/.claude/settings.json` (after whatever you already have there) and a `/wash` command in `~/.claude/skills/wash`. For Codex, it adds three hooks to `~/.codex/hooks.json` and a `$wash` command in `~/.codex/skills/wash`.
+Under the hood, it adds a status line, three hooks and one read-only permission to `~/.claude/settings.json` (after whatever you already have there) and a `/wash` command in `~/.claude/skills/wash`. The permission lets Claude search `~/.carwash/recall` without asking, and nothing else. For Codex, it adds three hooks to `~/.codex/hooks.json` and a `$wash` command in `~/.codex/skills/wash`.
 
 ## The Meter
 
@@ -40,7 +40,7 @@ The number is roughly how many tokens your conversation is using (Claude Code's 
 1. Type `/wash`. Claude writes a short brief: what you're working on, where things stand, and what's next. The status line switches to `Brief ready ✓`.
 2. Type `/clear`. Your new session starts with the brief already loaded.
 
-Your old conversation isn't gone. You can still find it in `/resume`.
+Your old conversation isn't gone. You can still find it in `/resume`, and the fresh session can search a text copy of it when it needs an exact detail the brief left out, like an error message or a file path. It only searches when it needs to, so otherwise it costs nothing extra.
 
 | Command | What it does |
 |---|---|
@@ -60,7 +60,7 @@ A few things worth knowing:
 - Writing a brief is a normal Claude reply, so it uses some tokens. `help`, `discard` and `load` are free.
 - Bigger conversations get bigger briefs. `/wash help` shows the size limit for each level.
 - Closed the terminal before you got to `/clear`? Run `claude` in the same folder and your brief loads. If there's more than one waiting, it'll list them so you can pick with `/wash load <id>`.
-- Briefs expire after 48 hours.
+- Briefs expire after 48 hours. The text copy of the conversation is deleted after 7 days, or as soon as you discard the brief.
 
 ## Codex
 
@@ -96,7 +96,7 @@ Every request to Claude or Codex sends the whole conversation again. After a was
 
 You wouldn't have kept going in the old conversation forever, so the main number only counts the first part of the prompts after each wash. That's two-thirds to begin with. Carwash then adjusts it by looking at how far your own past conversations went once they were that big, so if you usually clear around 300k, a wash at 300k counts for less. Anything the fresh conversation had to read again, like a file the old one already had open, is taken off too. "At most" counts every prompt. All of this is worked out on your computer from Claude Code's own history files, and only a few numbers per conversation are kept.
 
-Repeated context is charged at about a tenth of the price, so in dollars you're saving roughly a tenth of these numbers. You can also see this inside Claude Code with `/wash stats`.
+Repeated context is charged at a fraction of the price: a twentieth of the normal input price on Opus 5.5 and Sonnet 5.5, and about a tenth on most older models. So in dollars you're saving that fraction of these numbers. You can also see this inside Claude Code with `/wash stats`.
 
 If you run `stats --share`, it shows you exactly what it would send before asking.
 
@@ -110,7 +110,7 @@ This checks that everything's still installed and working, and shows your versio
 
 ## Where things are kept
 
-Your briefs, stats and error logs live in `~/.carwash`, and only you can read them. Nothing about you gets uploaded. Once a day, Carwash checks npm for a newer version. If you'd rather it didn't, set `CARWASH_NO_UPDATE_CHECK=1`.
+Your briefs, stats, error logs and the text copies of old conversations live in `~/.carwash`, and only you can read them. Nothing goes in your project folders. The text copies leave out images, so they're small: usually under a megabyte each. Nothing about you gets uploaded. Once a day, Carwash checks npm for a newer version. If you'd rather it didn't, set `CARWASH_NO_UPDATE_CHECK=1`.
 
 ## Uninstall
 
@@ -118,7 +118,7 @@ Your briefs, stats and error logs live in `~/.carwash`, and only you can read th
 npx context-carwash uninstall
 ```
 
-This puts `settings.json` back exactly as it was. If you've edited the file since installing, it only removes Carwash's status line and hooks and leaves your changes alone. Codex's `hooks.json` gets the same treatment. It also removes the `/wash` and `$wash` commands and deletes `~/.carwash`, including any waiting briefs and your stats.
+This puts `settings.json` back exactly as it was. If you've edited the file since installing, it only removes Carwash's status line, hooks and permission and leaves your changes alone. Codex's `hooks.json` gets the same treatment. It also removes the `/wash` and `$wash` commands and deletes `~/.carwash`, including any waiting briefs, text copies and your stats.
 
 ## Platforms
 
