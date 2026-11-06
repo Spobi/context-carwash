@@ -1,3 +1,4 @@
+import { isNewer } from '../install/update.mjs';
 import { CHARS_PER_TOKEN, capFor } from '../levels.mjs';
 import { RECALL_DAYS } from '../paths.mjs';
 import { colorAt, paint } from '../statusline/color.mjs';
@@ -6,7 +7,8 @@ import { toolInfo, toolOf } from '../tools.mjs';
 
 // The wording around a brief: what Claude is told when writing one, how its
 // reply is recognised, and what the user and the next session are shown. Also
-// the two places Carwash explains itself: the first-run welcome and /wash help.
+// the places Carwash explains itself: the first-run welcome, what is new after
+// an update, and /wash help.
 // Wording that names the tool or its commands takes the tool's id (see
 // tools.mjs); Claude Code is the default.
 
@@ -145,6 +147,7 @@ export function welcomeMessage(tool = 'claude') {
       'Context Carwash installed ✓ (shown once)',
       '  • After each reply: tokens in use, and how full the context is',
       '  • Getting full? $wash, then /clear and send your next message. You start fresh, right where you left off',
+      '  • Something the brief must keep? Name it: $wash keep the exact error',
       '  • Nothing runs on its own · $wash help for options',
     ].join('\n');
   }
@@ -152,8 +155,23 @@ export function welcomeMessage(tool = 'claude') {
     'Context Carwash installed ✓ (shown once)',
     '  • Status line: tokens in use, and how full the context is',
     '  • Getting full? /wash, then /clear. You start fresh, right where you left off',
+    '  • Something the brief must keep? Name it: /wash keep the exact error',
     '  • Nothing runs on its own · /wash help for options',
   ].join('\n');
+}
+
+// What a release brings that someone updating should hear about, in the
+// tool's own command. Most releases add nothing here.
+const WHATS_NEW = [
+  ['0.2.4', (wash) => `Name what a brief must keep: ${wash} keep the exact error. It gets its own section and is never cut to save space.`],
+];
+
+// Shown once, at the first quiet session after an update: what is new since
+// `from`, or null when nothing is worth saying.
+export function whatsNewMessage(from, to, tool = 'claude') {
+  const { wash } = toolInfo(tool);
+  const lines = WHATS_NEW.filter(([version]) => isNewer(version, from) && !isNewer(version, to)).map(([, line]) => `  • ${line(wash)}`);
+  return lines.length ? [`Context Carwash updated to ${to} ✓ (shown once)`, ...lines].join('\n') : null;
 }
 
 // What each level keeps, for /wash help.

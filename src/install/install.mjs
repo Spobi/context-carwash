@@ -3,9 +3,10 @@ import { homedir } from 'node:os';
 import { delimiter, dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { privateDir, readJson, writeFileAtomic } from '../files.mjs';
-import { RECALL_DAYS, carwashHome, claudeConfigDir, installRecordPath, legacyCommandPath, pendingDir, recallDir, settingsPath, skillDir } from '../paths.mjs';
+import { RECALL_DAYS, carwashHome, claudeConfigDir, installRecordPath, legacyCommandPath, pendingDir, recallDir, settingsPath, skillDir, updatedFromPath } from '../paths.mjs';
 import { applyCodexInstall, applyCodexUninstall, codexDetected, describeCodexInstall, describeCodexUninstall, planCodexInstall, planCodexUninstall } from './codex.mjs';
 import { UserError, readSettings, resolveSettingsFile, serializeSettings, sha256 } from './settings.mjs';
+import { isNewer } from './update.mjs';
 
 const PACKAGE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const APP_ENTRIES = ['bin', 'src', 'package.json', 'LICENSE'];
@@ -316,6 +317,19 @@ export function applyInstall(plan) {
   const extra = { ...(tools.length === 1 && tools[0] === 'claude' ? {} : { tools }), ...(codex ? { codex } : {}) };
   const nextRecord = plan.claude ? { ...base, ...applyClaudeInstall(plan), ...extra } : { ...base, ...extra };
   writeFileSync(installRecordPath({ CARWASH_HOME: home }), JSON.stringify(nextRecord, null, 2) + '\n', { mode: 0o600 });
+
+  // An update notes the version it replaced, so the next session in each tool
+  // can say what is new. Installing again before that session keeps the first
+  // note, which goes back further.
+  if (record?.version && isNewer(base.version, record.version)) {
+    for (const tool of tools) {
+      try {
+        writeFileSync(updatedFromPath({ CARWASH_HOME: home }, tool), `${record.version}\n`, { flag: 'wx', mode: 0o600 });
+      } catch {
+        // already noted
+      }
+    }
+  }
   return nextRecord;
 }
 

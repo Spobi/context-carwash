@@ -7,7 +7,7 @@
 Context Carwash adds a line to Claude Code in your terminal that:
 
 1. **The Meter:** shows the current conversation's context size.
-2. **/wash:** lets you compress your context and start a new session without losing important details.
+2. **/wash:** lets you compress your context and start a new session without losing important details. You can name anything it must keep: `/wash keep the exact error`.
 
 It works in Codex too: see [Codex](#codex).
 
@@ -23,7 +23,7 @@ npx context-carwash install
 
 It shows you what it's going to change and asks before doing anything. Then start a new Claude Code session and you're set. If you use Codex as well, it sets that up in the same go.
 
-When there's a new version, a line under the meter will tell you. To update, run `npx context-carwash@latest install`.
+When there's a new version, a line under the meter will tell you. To update, run `npx context-carwash@latest install`. Your next session after updating tells you what's new, once.
 
 Under the hood, it adds a status line, three hooks and one read-only permission to `~/.claude/settings.json` (after whatever you already have there) and a `/wash` command in `~/.claude/skills/wash`. The permission lets Claude search `~/.carwash/recall` without asking, and nothing else. For Codex, it adds three hooks to `~/.codex/hooks.json` and a `$wash` command in `~/.codex/skills/wash`.
 
@@ -48,6 +48,7 @@ Your old conversation isn't gone. You can still find it in `/resume`, and the fr
 | `/wash light` | Goal, current state, next step |
 | `/wash mid` | Adds constraints, decisions, state detail, pitfalls |
 | `/wash detailed` | Adds rationale, history, test results, risks, a step checklist |
+| `/wash keep the exact error` | Write a `mid` brief that also keeps what you name, in its own section |
 | `/wash discard` | Drop the brief. `/clear` is a normal clear again |
 | `/wash load [id]` | Make a waiting brief the one your next `/clear` uses |
 | `/wash stats` | How much context your washes have saved |
@@ -55,7 +56,7 @@ Your old conversation isn't gone. You can still find it in `/resume`, and the fr
 
 A few things worth knowing:
 
-- You can name anything the brief must keep: `/wash keep the exact error and the rollback plan`. It goes in its own section near the top and is never cut to save space. A note on its own gets a `mid` brief. For another level, put the level first: `/wash detailed keep the test names`.
+- A note on what to keep goes in its own section near the top of the brief and is never cut to save space. For a level other than `mid`, put the level first: `/wash detailed keep the test names`.
 - If you `/clear` without a brief ready, it's just a normal clear.
 - Writing a brief is a normal Claude reply, so it uses some tokens. `help`, `discard` and `load` are free.
 - Bigger conversations get bigger briefs. `/wash help` shows the size limit for each level.
@@ -66,7 +67,7 @@ A few things worth knowing:
 
 If you have Codex, `install` sets it up too. It works the same way, with a few differences:
 
-- The command is `$wash` (Codex keeps `/` for its own commands). Same options: `$wash light`, `$wash discard`, `$wash help` and so on.
+- The command is `$wash` (Codex keeps `/` for its own commands). Same options: `$wash light`, `$wash keep the exact error`, `$wash discard`, `$wash help` and so on.
 - Codex asks you to approve new hooks before it runs them. The first time you start Codex after installing, choose **Trust all and continue**.
 - After `/clear`, send your next message (even just "continue"). The brief loads with it, because that's when Codex starts the new session.
 - The meter shows up as a line after each reply, because Codex's status line can only show its own items:

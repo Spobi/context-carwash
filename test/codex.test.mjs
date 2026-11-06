@@ -334,7 +334,7 @@ test('Codex and Claude Code each say hello once', () => {
   const { env, start } = sandbox();
   mkdirSync(env.CARWASH_HOME, { recursive: true });
   writeFileSync(join(env.CARWASH_HOME, 'install.json'), '{}');
-  assert.match(start('startup').systemMessage, /^Context Carwash installed ✓ \(shown once\)\n {2}• After each reply: tokens in use, and how full the context is\n {2}• Getting full\? \$wash, then \/clear and send your next message/);
+  assert.match(start('startup').systemMessage, /^Context Carwash installed ✓ \(shown once\)\n {2}• After each reply: tokens in use, and how full the context is\n {2}• Getting full\? \$wash, then \/clear and send your next message.*\n {2}• Something the brief must keep\? Name it: \$wash keep the exact error\n/);
   assert.equal(start('startup'), null);
   const claude = runHook({ input: JSON.stringify({ hook_event_name: 'SessionStart', source: 'startup', session_id: 'C1', cwd: env.CARWASH_HOME }), env, now: NOW, me: B, running: () => false });
   assert.match(claude.systemMessage, /Status line: tokens in use/);

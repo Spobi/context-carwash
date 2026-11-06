@@ -1,13 +1,13 @@
-import { existsSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
 import { packageVersion } from '../install/install.mjs';
 import { startNotice, versionLine } from '../install/notice.mjs';
 import { isNewer } from '../install/update.mjs';
 import { DEFAULT_LEVEL, capFor, estimateTokens, isLevel } from '../levels.mjs';
-import { installRecordPath, welcomedPath } from '../paths.mjs';
+import { installRecordPath, updatedFromPath, welcomedPath } from '../paths.mjs';
 import { recordDelivery, recordWash, refreshLedger } from '../stats/ledger.mjs';
 import { colorDepth } from '../statusline/color.mjs';
 import { currentTotals, statsReport } from '../stats/report.mjs';
-import { budgetNote, composeContext, describe, helpMessage, loadedMessage, parseReply, pointerMessage, readyMessage, replyMeterMessage, retryNote, stalenessLine, welcomeMessage } from './brief.mjs';
+import { budgetNote, composeContext, describe, helpMessage, loadedMessage, parseReply, pointerMessage, readyMessage, replyMeterMessage, retryNote, stalenessLine, welcomeMessage, whatsNewMessage } from './brief.mjs';
 import { isTool, toolInfo, toolOf } from '../tools.mjs';
 import { repoState, worktreeRoot } from './git.mjs';
 import { codexProcess, codexUnattended, currentProcess, isRunning, sameProcess } from './process.mjs';
@@ -314,7 +314,27 @@ function welcome(ctx) {
     // Already shown, or nowhere to note it: better silent than said every time.
     return null;
   }
+  // The welcome already describes this version, so an update note goes with it.
+  rmSync(updatedFromPath(env, tool), { force: true });
   return { systemMessage: welcomeMessage(tool) };
+}
+
+// After an update, the first quiet start in each tool says what is new, once.
+// Deleting the installer's note is the claim, as creating the marker is for
+// the welcome.
+function whatsNew(ctx) {
+  const { env, tool } = ctx;
+  const file = updatedFromPath(env, tool);
+  if (!existsSync(file) || ctx.unattended()) return null;
+  let from;
+  try {
+    from = readFileSync(file, 'utf8').trim();
+    unlinkSync(file);
+  } catch {
+    return null;
+  }
+  const message = whatsNewMessage(from, ctx.version, tool);
+  return message ? { systemMessage: message } : null;
 }
 
 function onSessionStart(payload, ctx) {
@@ -325,8 +345,9 @@ function onSessionStart(payload, ctx) {
   // be asked through its command line, which on Windows takes a PowerShell
   // run, so it is asked only once a brief or the welcome is at stake.
   if (ctx.tool === 'claude' && ctx.unattended()) return null;
-  // The welcome waits for a start that has nothing else to say.
-  const result = briefAtStart(payload, ctx) ?? welcome(ctx);
+  // The welcome, or what is new since an update, waits for a start that has
+  // nothing else to say.
+  const result = briefAtStart(payload, ctx) ?? welcome(ctx) ?? whatsNew(ctx);
   quietly(ctx, () => ctx.checkUpdates?.());
   let notice = null;
   quietly(ctx, () => (notice = startNotice(ctx.version, ctx.env)));

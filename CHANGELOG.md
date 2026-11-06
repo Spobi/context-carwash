@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.5
+
+- After you update, your next session says what's new, once, in Claude Code and in Codex. It waits for a start with nothing else to say, so it never gets in the way of a brief loading. Updating from 0.2.3 or earlier, it tells you about notes on what to keep.
+- The welcome you see after installing now shows how to name what a brief must keep.
+- The README shows notes in the command table, near the top, and in the Codex section.
+
 ## 0.2.4
 
 - You can name what a brief must keep: `/wash keep the exact error and the rollback plan`. Claude puts it in a **Kept on request** section right after Core, keeps exact wording for errors, commands and paths, and cuts other sections first when the brief is too long. A note on its own gets a `mid` brief; to pick the level, put it first, as in `/wash detailed keep the test names`. The same works with `$wash` in Codex.

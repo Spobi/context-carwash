@@ -12,7 +12,7 @@ import { render } from '../src/statusline/render.mjs';
 import { statusline } from '../src/statusline/run.mjs';
 import { washState } from '../src/statusline/state.mjs';
 import { visibleWidth } from '../src/statusline/terminal.mjs';
-import { cleanTitle, composeContext, formatAge, parseReply, stalenessLine } from '../src/wash/brief.mjs';
+import { cleanTitle, composeContext, formatAge, parseReply, stalenessLine, whatsNewMessage } from '../src/wash/brief.mjs';
 import { runHook } from '../src/wash/hooks.mjs';
 import { isRunning, processStart, sameProcess } from '../src/wash/process.mjs';
 import { saveRecall } from '../src/wash/recall.mjs';
@@ -47,8 +47,8 @@ function sandbox() {
     return join(root, name);
   };
   const cwd = folder('project');
-  const hook = (payload, { me = A, now = NOW, running = () => false, extraEnv = {} } = {}) =>
-    runHook({ input: JSON.stringify({ cwd, ...payload }), env: { ...env, ...extraEnv }, now, me, running });
+  const hook = (payload, { me = A, now = NOW, running = () => false, extraEnv = {}, version } = {}) =>
+    runHook({ input: JSON.stringify({ cwd, ...payload }), env: { ...env, ...extraEnv }, now, me, running, version });
   const slash = (args, options = {}) =>
     hook({ hook_event_name: 'UserPromptExpansion', command_name: 'wash', command_args: args, session_id: options.session ?? 'S1', prompt_id: options.prompt ?? 'P1', cwd: options.cwd ?? cwd }, options);
   const stop = (message, options = {}) =>
@@ -559,6 +559,7 @@ test('the first session after install is welcomed, once', () => {
   const first = start('startup');
   assert.match(first.systemMessage, /^Context Carwash installed ✓ \(shown once\)\n/);
   assert.match(first.systemMessage, /\/wash, then \/clear/);
+  assert.match(first.systemMessage, /Something the brief must keep\? Name it: \/wash keep the exact error\n/);
   assert.equal(first.hookSpecificOutput, undefined);
   assert.equal(start('startup', { session: 'S3' }), null);
   assert.equal(start('clear', { session: 'S4' }), null);
@@ -569,6 +570,47 @@ test('the first session after install is welcomed, once', () => {
   assert.match(start('clear').systemMessage, /^Loaded your Carwash brief/);
   assert.equal(ready().length, 0);
   assert.match(start('clear', { session: 'S5' }).systemMessage, /^Context Carwash installed/);
+});
+
+test('the first quiet start after an update says what is new, once', () => {
+  const { env, start, wash } = sandbox();
+  const home = env.CARWASH_HOME;
+  const note = join(home, 'updated-from');
+  mkdirSync(home, { recursive: true });
+  writeFileSync(join(home, 'install.json'), '{}');
+  writeFileSync(join(home, 'welcomed'), '');
+  writeFileSync(note, '0.2.3\n');
+  const v = { version: '0.2.5' };
+
+  // A run nobody is watching does not use it up, and a brief to deliver comes first.
+  assert.equal(start('startup', { ...v, extraEnv: { CLAUDE_CODE_SESSION_ATTENDED: '0' } }), null);
+  wash('light');
+  assert.match(start('clear', v).systemMessage, /^Loaded your Carwash brief/);
+  assert.equal(
+    start('startup', { ...v, session: 'S3' }).systemMessage,
+    'Context Carwash updated to 0.2.5 ✓ (shown once)\n  • Name what a brief must keep: /wash keep the exact error. It gets its own section and is never cut to save space.',
+  );
+  assert.equal(existsSync(note), false);
+  assert.equal(start('startup', { ...v, session: 'S4' }), null);
+
+  // Nothing new since the old version: nothing said, and the note still goes.
+  writeFileSync(note, '0.2.4\n');
+  assert.equal(start('startup', { ...v, session: 'S5' }), null);
+  assert.equal(existsSync(note), false);
+
+  // Someone not welcomed yet gets the welcome, which already covers it.
+  rmSync(join(home, 'welcomed'));
+  writeFileSync(note, '0.2.3\n');
+  assert.match(start('startup', { ...v, session: 'S6' }).systemMessage, /^Context Carwash installed/);
+  assert.equal(start('startup', { ...v, session: 'S7' }), null);
+});
+
+test('what is new covers the releases between the old version and this one, in the tool’s own words', () => {
+  assert.match(whatsNewMessage('0.2.3', '0.2.4'), /^Context Carwash updated to 0\.2\.4 ✓ \(shown once\)\n {2}• Name what a brief must keep: \/wash keep/);
+  assert.match(whatsNewMessage('0.1.9', '0.3.0', 'codex'), /\$wash keep the exact error/);
+  assert.equal(whatsNewMessage('0.2.4', '0.2.5'), null);
+  assert.equal(whatsNewMessage('0.2.1', '0.2.3'), null);
+  assert.equal(whatsNewMessage('not a version', '0.2.5'), null);
 });
 
 test('the loaded message leaves out the old size when it was never known', () => {

@@ -272,6 +272,30 @@ test('installing twice changes nothing more and still restores the true original
   assert.equal(read(file), original);
 });
 
+test('an update notes the version it replaced, for the next session to say what is new', () => {
+  const { env, home } = sandbox();
+  const note = join(home, 'updated-from');
+  const recordFile = join(home, 'install.json');
+  const pretendInstalled = (version) => writeFileSync(recordFile, JSON.stringify({ ...json(recordFile), version }));
+  // A first install, or the same version again, is not an update.
+  install(env);
+  install(env);
+  assert.equal(existsSync(note), false);
+
+  pretendInstalled('0.2.3');
+  install(env);
+  assert.equal(read(note), '0.2.3\n');
+  assert.equal(json(recordFile).version, JSON.parse(read(new URL('../package.json', import.meta.url))).version);
+  // Updating again before any session keeps the note that goes back further.
+  pretendInstalled('0.2.4');
+  install(env);
+  assert.equal(read(note), '0.2.3\n');
+  // Codex was not set up, so it gets no note.
+  assert.equal(existsSync(join(home, 'updated-from-codex')), false);
+  uninstall(env);
+  assert.equal(existsSync(note), false);
+});
+
 test('reinstalling over edited settings never restores a stale backup', () => {
   const { env, file } = sandbox('{\n  "model": "opus"\n}\n');
   install(env);

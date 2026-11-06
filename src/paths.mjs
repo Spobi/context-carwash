@@ -57,6 +57,10 @@ export const noticePath = (env = process.env) => join(carwashHome(env), 'notice.
 // Present once the first-run welcome has been shown. Each tool says hello once.
 export const welcomedPath = (env = process.env, tool = 'claude') => join(carwashHome(env), tool === 'claude' ? 'welcomed' : `welcomed-${tool}`);
 
+// Left by an install that updated Carwash: the version it replaced. The next
+// session in each tool says what is new since then, once, and deletes it.
+export const updatedFromPath = (env = process.env, tool = 'claude') => join(carwashHome(env), tool === 'claude' ? 'updated-from' : `updated-from-${tool}`);
+
 // Where the /wash command is installed.
 export const skillDir = (env = process.env) => join(claudeConfigDir(env), 'skills', 'wash');
 export const legacyCommandPath = (env = process.env) => join(claudeConfigDir(env), 'commands', 'wash.md');
