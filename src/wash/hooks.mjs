@@ -21,9 +21,10 @@ import { AUTO_LOAD_MS, addRecord, claim, findRecords, purge, readyRecords, remov
 //   UserPromptExpansion  /wash was typed (Claude Code). In Codex, where $wash
 //   UserPromptSubmit     is a skill, every prompt comes through
 //                        UserPromptSubmit and only one starting with $wash is
-//                        ours. A level starts a wash and tells the model the
-//                        size limit; discard, load, stats and help are handled
-//                        here and never reach the model.
+//                        ours. A level or a note starts a wash and tells the
+//                        model the size limit and the note; discard, load,
+//                        stats and help are handled here and never reach the
+//                        model.
 //   Stop                 The model finished replying. If that reply is the
 //                        brief, save it. Otherwise, in Codex, show the meter.
 //   SessionStart         A session began. If a brief is meant for it, hand the
@@ -37,7 +38,7 @@ import { AUTO_LOAD_MS, addRecord, claim, findRecords, purge, readyRecords, remov
 
 const usageLine = (tool) => {
   const wash = toolInfo(tool).wash;
-  return `Usage: ${wash} [light | mid | detailed], ${wash} discard [id], ${wash} load [id], ${wash} stats, ${wash} help`;
+  return `Usage: ${wash} [light | mid | detailed] [note on what to keep], ${wash} discard [id], ${wash} load [id], ${wash} stats, ${wash} help`;
 };
 
 // How many times to ask for a shorter brief before keeping an oversized one.
@@ -89,23 +90,59 @@ function onPromptSubmit(payload, ctx) {
   return found ? washCommand(payload, found[1], 'UserPromptSubmit', ctx) : null;
 }
 
+// A first word that is a level, or a command with no more than it takes, is
+// read as one. Anything else of more than a word is the user's note on what
+// the brief must keep, at the default level: "/wash help me keep the API
+// notes" is a note, not help. A lone unknown word, or a near miss of a long
+// name, is taken for a typo and costs nothing.
 function washCommand(payload, args, event, ctx) {
-  const [verb = DEFAULT_LEVEL, ref] = String(args ?? '').trim().toLowerCase().split(/\s+/).filter(Boolean);
-  if (isLevel(verb)) return begin(payload, verb, event, ctx);
-  if (verb === 'discard') return block(discard(payload, ref, ctx));
-  if (verb === 'load') return block(load(payload, ref, ctx));
-  if (verb === 'stats') return block(statsReport(currentTotals(ctx.env, ctx.now), { inClaude: true }));
-  if (verb === 'help') return block(helpMessage(ctx.usage(payload)?.used ?? null, versionLine(ctx.version, ctx.env), ctx.tool));
-  return block(`${toolInfo(ctx.tool).wash} does not know "${verb}". ${usageLine(ctx.tool)}`);
+  const text = String(args ?? '').trim();
+  const words = text.toLowerCase().split(/\s+/).filter(Boolean);
+  const [verb = DEFAULT_LEVEL, ref] = words;
+  if (isLevel(verb)) return begin(payload, verb, text.replace(/^\S+\s*/, ''), event, ctx);
+  if (verb === 'discard' && words.length <= 2) return block(discard(payload, ref, ctx));
+  if (verb === 'load' && words.length <= 2) return block(load(payload, ref, ctx));
+  if (verb === 'stats' && words.length === 1) return block(statsReport(currentTotals(ctx.env, ctx.now), { inClaude: true }));
+  if (verb === 'help' && words.length === 1) return block(helpMessage(ctx.usage(payload)?.used ?? null, versionLine(ctx.version, ctx.env), ctx.tool));
+  const lone = words.length === 1;
+  const guess = meant(verb, lone ? NAMES : LONG_NAMES);
+  if (!lone && !guess) return begin(payload, DEFAULT_LEVEL, text, event, ctx);
+  const { wash } = toolInfo(ctx.tool);
+  const hint = guess ? ` Did you mean ${wash} ${guess}?` : '';
+  return block(`${wash} does not know "${verb}".${hint} For a note on what to keep, put a level first: ${wash} mid <note>. ${usageLine(ctx.tool)}`);
 }
 
-function begin(payload, level, event, ctx) {
+const NAMES = ['light', 'mid', 'detailed', 'discard', 'load', 'stats', 'help'];
+// Short names are a letter away from everyday words ("right", "did", "lead")
+// that may well start a note, so only these are checked there.
+const LONG_NAMES = ['detailed', 'discard'];
+
+// The name a typo was probably meant to be: one slip from a short name, two
+// from a long one, where swapping two letters counts as one.
+function meant(word, names) {
+  return names.find((name) => name !== word && slips(word, name) <= (name.length > 5 ? 2 : 1)) ?? null;
+}
+
+function slips(a, b) {
+  const d = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)]);
+  for (let j = 1; j <= b.length; j++) d[0][j] = j;
+  for (let i = 1; i <= a.length; i++) {
+    for (let j = 1; j <= b.length; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + cost);
+      if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) d[i][j] = Math.min(d[i][j], d[i - 2][j - 2] + 1);
+    }
+  }
+  return d[a.length][b.length];
+}
+
+function begin(payload, level, note, event, ctx) {
   const { env, now } = ctx;
   const usage = ctx.usage(payload);
   const used = usage?.used ?? null;
   const cap = capFor(level, used);
-  startWash(env, payload.session_id, { promptId: promptIdOf(payload), level, cap, used, size: usage?.size ?? null, startedAt: now, rewrites: 0 });
-  return { hookSpecificOutput: { hookEventName: event, additionalContext: budgetNote(level, cap, used) } };
+  startWash(env, payload.session_id, { promptId: promptIdOf(payload), level, cap, used, size: usage?.size ?? null, startedAt: now, rewrites: 0, ...(note ? { hasNote: true } : {}) });
+  return { hookSpecificOutput: { hookEventName: event, additionalContext: budgetNote(level, cap, used, note) } };
 }
 
 // Briefs waiting for the folder this session is in, other than its own. Only
@@ -212,7 +249,7 @@ function onStop(payload, ctx) {
   const overCap = Boolean(wash.cap) && tokens > wash.cap;
   if (overCap && wash.rewrites < MAX_REWRITES) {
     startWash(env, sessionId, { ...wash, rewrites: wash.rewrites + 1 });
-    const note = retryNote(wash.level, wash.cap, tokens);
+    const note = retryNote(wash.level, wash.cap, tokens, wash.hasNote);
     // Codex continues the turn with a Stop's block reason as the next prompt.
     if (ctx.tool === 'codex') return { decision: 'block', reason: note };
     return { hookSpecificOutput: { hookEventName: 'Stop', additionalContext: note } };

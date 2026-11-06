@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.4
+
+- You can name what a brief must keep: `/wash keep the exact error and the rollback plan`. Claude puts it in a **Kept on request** section right after Core, keeps exact wording for errors, commands and paths, and cuts other sections first when the brief is too long. A note on its own gets a `mid` brief; to pick the level, put it first, as in `/wash detailed keep the test names`. The same works with `$wash` in Codex.
+- A note can start with a word that is also a command: `/wash help me keep the API notes` writes a brief instead of showing help. `help` and `stats` are commands only when nothing follows them, and `load` and `discard` only with at most an id.
+- Likely typos cost nothing: `/wash detaled` or `/wash discrad a3f9c2` asks "Did you mean…?" instead of writing a brief.
+- `/wash help` shows how to add a note.
+- Run `npx context-carwash@latest install` to get the new `/wash` instructions.
+
 ## 0.2.3
 
 - A fresh session can now search the old conversation. When a brief is saved, Carwash keeps a text copy of the conversation in `~/.carwash/recall`, without images, and tells the fresh session where it is, so it can look up an exact error message, path or number the brief left out. The copy is deleted after 7 days, or when you discard the brief. Nothing goes in your project.

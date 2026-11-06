@@ -55,23 +55,26 @@ const sizeOf = (record) => `${record.level} ~${formatTokens(record.tokens)}`;
 // a3f9c2 "Fix login redirect" (mid ~1.1k, 14h ago)
 export const describe = (record, now) => `${record.id} "${record.title}" (${sizeOf(record)}, ${ageOf(record, now)})`;
 
-// Sent to Claude alongside the /wash prompt: the size limit for this brief.
-export function budgetNote(level, cap, used) {
+// Sent to Claude alongside the /wash prompt: the size limit for this brief,
+// and the user's note on what it must keep, if they wrote one.
+export function budgetNote(level, cap, used, note = '') {
+  const kept = note ? ` The user's note on what this brief must keep: ${note}` : '';
   if (!cap) {
-    return `Carwash: level ${level}. The size of this session is not known yet, so there is no token ceiling for this brief. Keep to the ${level} scope and keep it short.`;
+    return `Carwash: level ${level}. The size of this session is not known yet, so there is no token ceiling for this brief. Keep to the ${level} scope and keep it short.${kept}`;
   }
   const chars = Math.max(100, Math.round((cap * CHARS_PER_TOKEN) / 100) * 100);
   return (
     `Carwash: level ${level}. This session is using about ${formatTokens(used)} tokens, so the ceiling for this brief is ${cap} tokens, ` +
-    `which is roughly ${chars} characters. That is a limit, not a target: stop as soon as the brief is complete.`
+    `which is roughly ${chars} characters. That is a limit, not a target: stop as soon as the brief is complete.${kept}`
   );
 }
 
 // Sent to Claude when its brief came out over the cap.
-export function retryNote(level, cap, tokens) {
+export function retryNote(level, cap, tokens, hasNote = false) {
+  const keep = hasNote ? ', the Core section, and everything in Kept on request' : ' and the Core section';
   return (
     `Carwash: that brief is about ${tokens} tokens, over the ${cap}-token ceiling for ${level}. Send it again shortened to fit. ` +
-    'Keep the "# Carwash brief:" heading and the Core section, cut the least useful detail first, and reply with the brief alone.'
+    `Keep the "# Carwash brief:" heading${keep}, cut the least useful detail first, and reply with the brief alone.`
   );
 }
 
@@ -180,6 +183,8 @@ export function helpMessage(used, footer = null, tool = 'claude') {
     level('detailed'),
     row('discard', 'drop the brief; /clear is a normal clear again'),
     row('load [id]', 'make a waiting brief the one /clear uses'),
+    '',
+    `Add a note to name what the brief must keep: ${wash} keep the exact error, or ${wash} detailed keep the test names.`,
     '',
     ...(meter ? ["The status line shows how many tokens this conversation is using, and the bar shows how close that is to the model's limit."] : []),
     ...(replyMeter ? ["The line after each reply shows how many tokens this conversation is using, and the bar shows how close that is to the model's limit. It is shown to you only and costs no tokens."] : []),

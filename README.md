@@ -55,7 +55,7 @@ Your old conversation isn't gone. You can still find it in `/resume`, and the fr
 
 A few things worth knowing:
 
-- You can tell Claude what to focus on: `/wash mid focus on the failing test`.
+- You can name anything the brief must keep: `/wash keep the exact error and the rollback plan`. It goes in its own section near the top and is never cut to save space. A note on its own gets a `mid` brief. For another level, put the level first: `/wash detailed keep the test names`.
 - If you `/clear` without a brief ready, it's just a normal clear.
 - Writing a brief is a normal Claude reply, so it uses some tokens. `help`, `discard` and `load` are free.
 - Bigger conversations get bigger briefs. `/wash help` shows the size limit for each level.

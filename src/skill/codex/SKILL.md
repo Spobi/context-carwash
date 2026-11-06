@@ -11,7 +11,7 @@ The user typed $wash. Context Carwash saves your reply as a handoff brief, but o
 
 When the message is there: the user wants to start a fresh session that picks up where this one leaves off. Your whole reply to this message is saved as the handoff brief, and it is the first thing the next session reads. That session cannot see this conversation. It can search a saved copy for an exact detail, but only if it knows to look, so the brief has to stand on its own.
 
-The words after $wash in the user's message are the arguments. The first word is the level: `light`, `mid`, or `detailed`. No arguments means `mid`. Anything after the level is the user's note on what to emphasise.
+The "Carwash: level" message gives the level for this brief (`light`, `mid`, or `detailed`), its token ceiling, and the user's note on what the brief must keep, if they wrote one. Go by that message, not by the words after $wash.
 
 Reply with the brief and nothing else: no preamble, no closing remark, no code fence around it. Do not call tools or read files to prepare. Write from what is already in this conversation.
 
@@ -30,9 +30,11 @@ Start with exactly this heading, then the Core section:
 
 Core must stand on its own in under 1,000 characters. A session that reads only Core should still start in the right place.
 
-After Core, add only the sections for the level, and skip any that would be empty:
+If the user wrote a note, put a **Kept on request** section straight after Core, at every level. It holds everything the note asks for that this conversation has, with the exact wording of error messages, commands, paths, and numbers. If the note asks for something this conversation does not have, say so in one line instead of guessing. Never drop or shorten anything here to save space: cut from the other sections instead. Secrets stay out even when the note asks for them.
 
-- `light`: Core only. Add one line for a critical constraint if breaking it would undo the work.
+After that, add only the sections for the level, and skip any that would be empty:
+
+- `light`: no other sections. Add one line for a critical constraint if breaking it would undo the work.
 - `mid`: **Constraints** (the user's corrections and preferences that still apply), **Decisions** (what was settled, with the reason in a clause), **State** (files and branches changed, commands and tests run with their results, uncommitted work, blockers), **Pitfalls** (what to avoid, and approaches that failed).
 - `detailed`: everything in `mid`, plus **Rationale** for the main decisions, **History** (experiments worth knowing about and what each one showed), **Test results**, **Risks and open assumptions**, and **Steps** (a checklist of what remains).
 

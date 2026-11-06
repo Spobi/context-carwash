@@ -122,13 +122,38 @@ test('/wash tells Claude the size limit and marks the session as washing', () =>
   assert.deepEqual({ ...currentWash(env, 'S1', NOW), startedAt: 0 }, { promptId: 'P1', level: 'mid', cap: 4080, used: 136_000, size: 200_000, startedAt: 0, rewrites: 0 });
 
   assert.match(slash('light').hookSpecificOutput.additionalContext, /level light.*1360 tokens/);
-  assert.match(slash('DETAILED  focus on the auth bug').hookSpecificOutput.additionalContext, /level detailed.*13600 tokens/);
+  assert.doesNotMatch(slash('light').hookSpecificOutput.additionalContext, /note/);
+  const noted = slash('DETAILED  focus on the Auth bug').hookSpecificOutput.additionalContext;
+  assert.match(noted, /level detailed.*13600 tokens.*stop as soon as the brief is complete\. The user's note on what this brief must keep: focus on the Auth bug$/);
   assert.equal(currentWash(env, 'S1', NOW).level, 'detailed');
+  assert.equal(currentWash(env, 'S1', NOW).hasNote, true);
 
   // Before the first reply there is no reading, so no number is claimed.
   const unknown = slash('mid', { session: 'S9' });
   assert.match(unknown.hookSpecificOutput.additionalContext, /no token ceiling/);
   assert.equal(currentWash(env, 'S9', NOW).cap, null);
+  assert.match(slash('mid keep the test names', { session: 'S9' }).hookSpecificOutput.additionalContext, /keep it short\. The user's note on what this brief must keep: keep the test names$/);
+});
+
+test('a note on what to keep needs no level, and words that are also commands can start one', () => {
+  const { env, slash } = sandbox();
+  saveUsage(env, 'S1', { used: 136_000, size: 200_000 });
+  const asNote = (args) => {
+    const result = slash(args);
+    assert.equal(result.decision, undefined, args);
+    const wash = currentWash(env, 'S1', NOW);
+    return [wash.level, wash.hasNote, result.hookSpecificOutput.additionalContext.replace(/^[\s\S]*must keep: /, '')];
+  };
+  assert.deepEqual(asNote('Keep the exact\nERR_CROSSSLOT error'), ['mid', true, 'Keep the exact\nERR_CROSSSLOT error']);
+  // A command only counts with no more than it takes.
+  assert.deepEqual(asNote('help me keep the API notes'), ['mid', true, 'help me keep the API notes']);
+  assert.deepEqual(asNote('stats for the benchmark post'), ['mid', true, 'stats for the benchmark post']);
+  assert.deepEqual(asNote('load balancer settings'), ['mid', true, 'load balancer settings']);
+  assert.deepEqual(asNote('discard the old plan, keep the new one'), ['mid', true, 'discard the old plan, keep the new one']);
+  // Short names are a letter from everyday words, so those are not taken for typos.
+  assert.deepEqual(asNote('right now the retry logic'), ['mid', true, 'right now the retry logic']);
+  // A level first is always the level, even when it reads as part of the note.
+  assert.deepEqual(asNote('light theme decisions'), ['light', true, 'theme decisions']);
 });
 
 test('other commands, and anything that is not a hook call, are ignored', () => {
@@ -237,6 +262,10 @@ test('a brief over its cap is sent back for shortening, and never kept silently'
   assert.equal(ready().length, 1);
   assert.equal(ready()[0].overCap, true);
   assert.equal(currentWash(env, 'S1', NOW), null);
+
+  // With a note, what it asked for is the last thing to go.
+  slash('light keep the error text');
+  assert.match(stop(BRIEF).hookSpecificOutput.additionalContext, /Keep the "# Carwash brief:" heading, the Core section, and everything in Kept on request, cut/);
 });
 
 test('/wash then /clear: the fresh session starts with the brief, once', () => {
@@ -464,9 +493,17 @@ test('/wash load makes a waiting brief the one /clear will use', () => {
   assert.match(start('clear', { cwd: other }).systemMessage, /This brief was written in a different folder: /);
 });
 
-test('unknown /wash arguments explain themselves instead of reaching Claude', () => {
+test('unknown /wash arguments and likely typos explain themselves instead of reaching Claude', () => {
   const { env, slash } = sandbox();
-  assert.deepEqual(slash('bogus'), { decision: 'block', reason: 'Carwash: /wash does not know "bogus". Usage: /wash [light | mid | detailed], /wash discard [id], /wash load [id], /wash stats, /wash help' });
+  const usage = 'Usage: /wash [light | mid | detailed] [note on what to keep], /wash discard [id], /wash load [id], /wash stats, /wash help';
+  assert.deepEqual(slash('bogus'), { decision: 'block', reason: `Carwash: /wash does not know "bogus". For a note on what to keep, put a level first: /wash mid <note>. ${usage}` });
+  assert.equal(slash('Detaled').reason, `Carwash: /wash does not know "detaled". Did you mean /wash detailed? For a note on what to keep, put a level first: /wash mid <note>. ${usage}`);
+  // One slip from a short name when it is the only word, two from a long one,
+  // and a near miss of a long name even with more after it.
+  for (const [typo, name] of [['hlep', 'help'], ['lod', 'load'], ['ligth', 'light'], ['dicsard', 'discard'], ['discrad a3f9c2', 'discard'], ['detialed keep the steps', 'detailed']]) {
+    assert.match(slash(typo).reason, new RegExp(`Did you mean /wash ${name}\\?`), typo);
+  }
+  assert.doesNotMatch(slash('xyz').reason, /Did you mean/);
   assert.equal(currentWash(env, 'S1', NOW), null);
 });
 
@@ -485,6 +522,8 @@ test('/wash help explains the meter and the options without reaching Claude', ()
       '  /wash detailed        adds reasoning, history, test results, a checklist, up to 13.6k tokens',
       '  /wash discard         drop the brief; /clear is a normal clear again',
       '  /wash load [id]       make a waiting brief the one /clear uses',
+      '',
+      'Add a note to name what the brief must keep: /wash keep the exact error, or /wash detailed keep the test names.',
       '',
       "The status line shows how many tokens this conversation is using, and the bar shows how close that is to the model's limit.",
       'Writing a brief is an ordinary Claude reply, so it uses tokens. help, discard and load do not.',

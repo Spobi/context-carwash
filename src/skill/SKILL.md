@@ -1,7 +1,7 @@
 ---
 name: wash
 description: Context Carwash. Writes a short handoff brief of this session, so that /clear can start a fresh session that carries on from it.
-argument-hint: "[light | mid | detailed | discard | load <id> | stats | help]"
+argument-hint: "[light | mid | detailed] [what to keep] | discard | load <id> | stats | help"
 disable-model-invocation: true
 metadata:
   installed-by: context-carwash
@@ -11,7 +11,7 @@ The user typed /wash. They want to start a fresh session that picks up where thi
 
 Arguments: $ARGUMENTS
 
-The first word is the level: `light`, `mid`, or `detailed`. No arguments means `mid`. Anything after the level is the user's note on what to emphasise. If the first word is something else, Carwash's hooks are not running: write no brief, and tell the user in one sentence to run `carwash install` again.
+Carwash's hooks send a line with this command that starts with "Carwash: level". It gives the level for this brief (`light`, `mid`, or `detailed`), its token ceiling, and the user's note on what the brief must keep, if they wrote one. Go by that line, not by the arguments above. If there is no such line, Carwash's hooks are not running: write no brief, and tell the user in one sentence to run `carwash install` again.
 
 Reply with the brief and nothing else: no preamble, no closing remark, no code fence around it. Do not call tools or read files to prepare. Write from what is already in this conversation.
 
@@ -30,9 +30,11 @@ Start with exactly this heading, then the Core section:
 
 Core must stand on its own in under 1,000 characters. A session that reads only Core should still start in the right place.
 
-After Core, add only the sections for the level, and skip any that would be empty:
+If the user wrote a note, put a **Kept on request** section straight after Core, at every level. It holds everything the note asks for that this conversation has, with the exact wording of error messages, commands, paths, and numbers. If the note asks for something this conversation does not have, say so in one line instead of guessing. Never drop or shorten anything here to save space: cut from the other sections instead. Secrets stay out even when the note asks for them.
 
-- `light`: Core only. Add one line for a critical constraint if breaking it would undo the work.
+After that, add only the sections for the level, and skip any that would be empty:
+
+- `light`: no other sections. Add one line for a critical constraint if breaking it would undo the work.
 - `mid`: **Constraints** (the user's corrections and preferences that still apply), **Decisions** (what was settled, with the reason in a clause), **State** (files and branches changed, commands and tests run with their results, uncommitted work, blockers), **Pitfalls** (what to avoid, and approaches that failed).
 - `detailed`: everything in `mid`, plus **Rationale** for the main decisions, **History** (experiments worth knowing about and what each one showed), **Test results**, **Risks and open assumptions**, and **Steps** (a checklist of what remains).
 

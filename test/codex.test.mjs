@@ -72,10 +72,12 @@ test('$wash is how Codex asks for a brief: the size limit comes from its session
   assert.equal(result.decision, undefined);
   assert.equal(result.hookSpecificOutput.hookEventName, 'UserPromptSubmit');
   assert.match(result.hookSpecificOutput.additionalContext, /^Carwash: level mid\. This session is using about 100k tokens, so the ceiling for this brief is 3000 tokens/);
-  assert.deepEqual({ ...currentWash(env, 'S1', NOW), startedAt: 0 }, { promptId: 'T-1', level: 'mid', cap: 3000, used: 100_000, size: 258_400, startedAt: 0, rewrites: 0 });
+  assert.deepEqual({ ...currentWash(env, 'S1', NOW), startedAt: 0 }, { promptId: 'T-1', level: 'mid', cap: 3000, used: 100_000, size: 258_400, startedAt: 0, rewrites: 0, hasNote: true });
   // No arguments means mid, and a line break is as good as a space.
   assert.match(submit('$wash').hookSpecificOutput.additionalContext, /level mid/);
-  assert.match(submit('  $wash light\nkeep the test names').hookSpecificOutput.additionalContext, /level light/);
+  assert.match(submit('  $wash light\nkeep the test names').hookSpecificOutput.additionalContext, /level light.*must keep: keep the test names$/);
+  // A note on its own means mid.
+  assert.match(submit('$wash keep the exact error').hookSpecificOutput.additionalContext, /^Carwash: level mid\..*must keep: keep the exact error$/);
 });
 
 test('every other prompt passes straight through, without looking anything up', () => {
@@ -258,7 +260,9 @@ test('discard, load, stats, help and mistakes answer in Codex without a model tu
   assert.doesNotMatch(help.reason, /status line/);
   assert.match(help.reason, /ordinary Codex reply/);
 
-  assert.match(submit('$wash nonsense').reason, /^Carwash: \$wash does not know "nonsense"\. Usage: \$wash \[light \| mid \| detailed\], \$wash discard \[id\]/);
+  assert.match(submit('$wash nonsense').reason, /^Carwash: \$wash does not know "nonsense"\. For a note on what to keep, put a level first: \$wash mid <note>\. Usage: \$wash \[light \| mid \| detailed\] \[note on what to keep\], \$wash discard \[id\]/);
+  assert.match(submit('$wash detaled').reason, /Did you mean \$wash detailed\?/);
+  assert.match(help.reason, /Add a note to name what the brief must keep: \$wash keep the exact error/);
   assert.match(submit('$wash stats').reason, /^Carwash: Carwash stats: no briefs written yet/);
 
   wash('light');
