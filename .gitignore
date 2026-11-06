@@ -5,3 +5,4 @@ coverage/
 .claude/settings.local.json
 spikes/**/out/
 __pycache__/
+Reddit*.json
