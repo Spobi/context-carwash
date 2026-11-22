@@ -526,6 +526,7 @@ test('/wash help explains the meter and the options without reaching Claude', ()
       'Add a note to name what the brief must keep: /wash keep the exact error, or /wash detailed keep the test names.',
       '',
       "The status line shows how many tokens this conversation is using, and the bar shows how close that is to the model's limit.",
+      "cache 42m is how long Claude's cache of this conversation stays warm. Until then each message reads the conversation from the cache cheaply. The first message after it expires writes it all to the cache again, which on a big conversation costs dozens of times as much. In the last 10 minutes the timer turns amber, then red, and the hint says /wash now while it's still cheap.",
       'Writing a brief is an ordinary Claude reply, so it uses tokens. help, discard and load do not.',
       'The old conversation is also saved as plain text for 7 days, so the fresh session can search it for an exact detail the brief left out.',
       '',

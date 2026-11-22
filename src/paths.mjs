@@ -46,6 +46,10 @@ export const shareIdPath = (env = process.env) => join(carwashHome(env), 'share-
 
 export const errorLogPath = (env = process.env) => join(carwashHome(env), 'errors.log');
 
+// How the cache timer reads the session file, and how often its "still warm"
+// turned out wrong, for `carwash doctor`. Counts only, no conversation text.
+export const cacheChecksPath = (env = process.env) => join(carwashHome(env), 'cache-checks.json');
+
 // Touched when someone has looked at the errors (doctor) or just installed, so
 // the status line only mentions errors logged after that.
 export const errorsSeenPath = (env = process.env) => join(carwashHome(env), 'errors-seen');

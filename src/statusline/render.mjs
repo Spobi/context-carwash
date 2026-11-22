@@ -20,6 +20,33 @@ const HINT_LONG = '/wash to compress & save context, then /clear';
 const HINT_MID = '/wash to compress, then /clear';
 const HINT_SHORT = '/wash to compress';
 
+// In the cache's last stretch the invitation says why now: a wash then reads
+// the conversation from the cache, and after it expires the next message
+// writes the whole conversation to the cache again.
+const NUDGE_LONG = "/wash now while it's still cheap";
+const NUDGE_SHORT = '/wash now';
+const NUDGE_LINKED = "Wash now while it's still cheap";
+
+// The cache timer stays plain until its last stretch: the last 10 minutes of
+// the one-hour cache, the last 2 of the five-minute one. Amber for the first
+// half of that stretch, red for the second, grey once it has expired.
+const AMBER = [0xd9, 0x79, 0x26];
+const RED = [0xc4, 0x3d, 0x32];
+const GREY = [0x8a, 0x8a, 0x8a];
+export const warnWindow = (ttlMs) => (ttlMs >= 60 * 60_000 ? 10 * 60_000 : 2 * 60_000);
+
+// "cache 42m", rounded down, "cache <1m" in the last minute, "cache expired".
+// Returns { text, warning } or null when there is nothing to time.
+export function cacheSegment(cache, depth) {
+  if (!cache || !Number.isFinite(cache.leftMs) || !Number.isFinite(cache.ttlMs)) return null;
+  if (cache.leftMs <= 0) return { text: paint('cache expired', GREY, depth), warning: false };
+  const minutes = Math.floor(cache.leftMs / 60_000);
+  const label = minutes >= 1 ? `cache ${minutes}m` : 'cache <1m';
+  const stretch = warnWindow(cache.ttlMs);
+  if (cache.leftMs > stretch) return { text: label, warning: false };
+  return { text: paint(label, cache.leftMs > stretch / 2 ? AMBER : RED, depth), warning: true };
+}
+
 const finite = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
 
 // 850 -> "850", 1360 -> "1.4k", 136000 -> "136k", 1000000 -> "1M"
@@ -73,10 +100,10 @@ function bar(pct, depth, style) {
   return `[${cells}${'░'.repeat(BAR_CELLS - filled)}]`;
 }
 
-function linkedAction(caps, links, modifier) {
+function linkedAction(caps, links, modifier, label = 'Compress & New Session') {
   const link = (url, text) => `\x1b]8;;${url}\x07${text}\x1b]8;;\x07`;
   const names = LEVELS.map((l) => link(links[l.name], l.name) + (caps ? ` ≤${caps[l.name]}` : '')).join(' · ');
-  return `Compress & New Session (${modifier}): ${names}`;
+  return `${label} (${modifier}): ${names}`;
 }
 
 // Render Carwash's status line segment.
@@ -87,10 +114,13 @@ function linkedAction(caps, links, modifier) {
 // options.barStyle  'ramp' (default) or 'solid'
 // options.state     { washing: level } while a brief is being written, or
 //                   { ready: { level, tokens } } once one is waiting for /clear
+// options.cache     { leftMs, ttlMs } from the cache timer, or null for none
 //
 // Returns { text, hasBar }: the richest candidate that fits. Narrow widths
 // shorten the invitation in two steps, then lose the bar, and finally
 // everything but the tokens in use and, once it applies, "getting full".
+// The cache timer is shown only beside an invitation to wash. It keeps its
+// place while the invitation shortens, and is dropped before the bar.
 export function render(payload, options = {}) {
   const env = options.env ?? process.env;
   const columns = options.columns ?? availableColumns(env);
@@ -124,21 +154,33 @@ export function render(payload, options = {}) {
       [usedSeg, barSeg, 'washing…'],
       [usedSeg, 'washing…'],
     ];
-  } else if (options.links && supportsLinks(env)) {
-    const modifier = clickModifier(options.platform);
-    candidates = [
-      [usedSeg, barSeg, say(linkedAction(caps, options.links, modifier))],
-      [usedSeg, barSeg, say(linkedAction(null, options.links, modifier))],
-      [usedSeg, say(linkedAction(null, options.links, modifier))],
-    ];
   } else {
-    candidates = [
-      [usedSeg, barSeg, say(HINT_FULL)],
-      [usedSeg, barSeg, say(HINT_LONG)],
-      [usedSeg, barSeg, say(HINT_MID)],
-      [usedSeg, barSeg, say(HINT_SHORT)],
-      [usedSeg, say(HINT_SHORT)],
-    ];
+    const timer = cacheSegment(options.cache, depth);
+    const warning = Boolean(timer?.warning);
+    // hints: longest first. short: the shortest, kept for narrow windows, and
+    // without the nudge's "now", which needs the timer beside it to make sense.
+    let hints;
+    let short;
+    if (options.links && supportsLinks(env)) {
+      const modifier = clickModifier(options.platform);
+      const label = warning ? NUDGE_LINKED : undefined;
+      hints = [linkedAction(caps, options.links, modifier, label), linkedAction(null, options.links, modifier, label)];
+      short = linkedAction(null, options.links, modifier);
+    } else {
+      hints = warning ? [NUDGE_LONG, NUDGE_SHORT] : [HINT_FULL, HINT_LONG, HINT_MID, HINT_SHORT];
+      short = HINT_SHORT;
+    }
+    candidates = [];
+    if (timer) {
+      candidates.push(...hints.map((hint) => [usedSeg, barSeg, timer.text, say(hint)]));
+      // The timer matters more than the words "getting full": the bar's
+      // colour still says that.
+      if (full) candidates.push([usedSeg, barSeg, timer.text, hints[hints.length - 1]]);
+      candidates.push([usedSeg, barSeg, say(short)]);
+    } else {
+      candidates.push(...hints.map((hint) => [usedSeg, barSeg, say(hint)]));
+    }
+    candidates.push([usedSeg, say(short)]);
   }
   if (full) candidates.push([usedSeg, FULL]);
   candidates.push([usedSeg]);

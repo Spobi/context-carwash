@@ -30,10 +30,23 @@ Under the hood, it adds a status line, three hooks and one read-only permission 
 ## The Meter
 
 ```text
-session context ~136k  [██████████░░░░░]  /wash to compress & save context, then /clear keeps compressed context
+session context ~136k  [██████████░░░░░]  cache 42m  /wash to compress & save context, then /clear
 ```
 
 The number is roughly how many tokens your conversation is using (Claude Code's estimate). The bar shows how full the context window is and changes colour as it fills up. In a narrow window the text shortens to fit. It's just a meter, so it never does anything on its own.
+
+### The cache timer
+
+`cache 42m` is how long Claude's cache of this conversation stays warm. While it's warm, each message reads the conversation from the cache at a twentieth of the normal input price (on Opus 5.5 and Sonnet 5.5). Once it expires, your next message writes the whole conversation to the cache again at twice the normal price. On a big conversation, that one message costs about 40 times as much as it would have a minute earlier.
+
+The timer stays plain until the last 10 minutes (the last 2 on the five-minute cache, which API-key users get). Then it turns amber, then red, and the hint changes to `/wash now while it's still cheap`. Once it runs out it shows `cache expired` in grey until your next message.
+
+- **Timed from when Claude Code sends each request,** not from when the reply finishes, since that's when the cache's clock starts. It rounds down and keeps a 10-second margin, so it's never ahead of the real cache.
+- **A model switch shows `cache expired` right away,** because each model has its own cache. After `/compact` or `/clear` the timer hides until the next reply.
+- **When in doubt, it shows nothing.** If it can't tell when the last request was sent, there's no timer rather than a guess.
+- **It checks itself.** When you come back after a pause it called safe, your next reply shows whether the cache really was still there. `carwash doctor` shows how many of those checks it got right.
+- **Two things it can't see:** something that resets the cache early without telling the status line (it says the cache is warm when it isn't), and Claude Code's own background requests, which can keep the cache warm longer than the timer thinks (it says expired when it isn't).
+- It only shows while the line is inviting a wash, not while a brief is being written or waiting for `/clear`. It's Claude Code only. To turn it off, set `CARWASH_NO_CACHE_TIMER=1`.
 
 ## /wash
 
@@ -111,7 +124,7 @@ This checks that everything's still installed and working, and shows your versio
 
 ## Where things are kept
 
-Your briefs, stats, error logs and the text copies of old conversations live in `~/.carwash`, and only you can read them. Nothing goes in your project folders. The text copies leave out images, so they're small: usually under a megabyte each. Nothing about you gets uploaded. Once a day, Carwash checks npm for a newer version. If you'd rather it didn't, set `CARWASH_NO_UPDATE_CHECK=1`.
+Your briefs, stats, error logs, the cache timer's self-check counts and the text copies of old conversations live in `~/.carwash`, and only you can read them. Nothing goes in your project folders. The text copies leave out images, so they're small: usually under a megabyte each. Nothing about you gets uploaded. Once a day, Carwash checks npm for a newer version. If you'd rather it didn't, set `CARWASH_NO_UPDATE_CHECK=1`.
 
 ## Uninstall
 

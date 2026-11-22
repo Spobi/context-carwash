@@ -5,6 +5,8 @@ import { join, sep } from 'node:path';
 import { readJson } from '../files.mjs';
 import { errorLogPath, errorsSeenPath, installRecordPath, settingsPath, skillDir } from '../paths.mjs';
 import { refreshLedger, totals } from '../stats/ledger.mjs';
+import { readChecks, timerOff } from '../statusline/cache.mjs';
+import { formatTokens } from '../statusline/render.mjs';
 import { readyRecords } from '../wash/store.mjs';
 import { codexDetected, codexHooksCheck, codexSkillInstalled } from './codex.mjs';
 import { commandProgram, isCarwashCommand, isCarwashHook, recallRule } from './install.mjs';
@@ -78,7 +80,31 @@ function settingsCheck(env) {
   const hookCommands = HOOK_EVENTS.flatMap((event) => groups(event).flatMap((group) => (Array.isArray(group?.hooks) ? group.hooks.map((hook) => hook?.command) : [])));
   const ours = [data?.statusLine?.command, ...hookCommands].filter((command) => isCarwashCommand(command) || isCarwashHook(command));
   const allow = data?.permissions?.allow;
-  return { readable: true, statusLine: isCarwashCommand(data?.statusLine?.command), hooks, recall: Array.isArray(allow) && allow.includes(recallRule(env)), nodes: [...new Set(ours.map(commandProgram).filter(Boolean))] };
+  const settingsEnv = data?.env && typeof data.env === 'object' ? data.env : {};
+  return {
+    readable: true,
+    statusLine: isCarwashCommand(data?.statusLine?.command),
+    hooks,
+    recall: Array.isArray(allow) && allow.includes(recallRule(env)),
+    nodes: [...new Set(ours.map(commandProgram).filter(Boolean))],
+    timerOff: timerOff(settingsEnv),
+  };
+}
+
+// How the cache timer reads the session file, and how its self-check has gone:
+// each time a reply came after a pause the timer said the cache would survive,
+// whether the reply really did read from the cache.
+export function cacheTimerRow(env, offInSettings = false) {
+  if (timerOff(env) || offInSettings) return 'off (CARWASH_NO_CACHE_TIMER is set)';
+  const checks = readChecks(env);
+  const how = { requests: 'on, timed from when each request was sent', replies: 'on, timed from replies (this Claude Code writes no request times)' }[checks?.method] ?? 'on, not shown yet';
+  const checked = Number.isFinite(checks?.checked) ? checks.checked : 0;
+  const missed = Number.isFinite(checks?.missed) ? checks.missed : 0;
+  if (!checked) return how;
+  if (!missed) return `${how} · right after all ${checked} pauses checked`;
+  const last = Array.isArray(checks.misses) ? checks.misses[checks.misses.length - 1] : null;
+  const detail = last ? ` (last: ${last.pausedMin} min pause, read ${formatTokens(last.read ?? 0)} of ~${formatTokens(last.expected ?? 0)})` : '';
+  return `${how} · cache gone after ${missed} of ${checked} pauses it called warm${detail}`;
 }
 
 // The Node that Carwash's commands start. Install writes its path into the
@@ -135,6 +161,7 @@ export function doctorReport({ env = process.env, now = Date.now(), running, new
         out.push(row('Settings', `could not read ${tilde(settingsPath(env))}`));
       } else {
         out.push(row('Status line', yes(check.statusLine)));
+        out.push(row('Cache timer', cacheTimerRow(env, check.timerOff)));
         out.push(row('Hooks', HOOK_EVENTS.map((event) => `${event} ${yes(check.hooks[event])}`).join(' · ')));
         out.push(row('Session search', check.recall ? 'ok' : `MISSING: Claude will ask before searching an old session · to fix: ${UPDATE_COMMAND}`));
         nodes.push(...check.nodes);

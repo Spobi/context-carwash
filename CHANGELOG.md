@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.7
+
+- Cache timer. The status line shows how long Claude's cache of this conversation stays warm: `cache 42m`. Once it expires, the next message writes the whole conversation to the cache again, which on Opus 5.5 costs about 40 times as much as reading it. The timer stays plain until the last 10 minutes (2 on the five-minute cache), turns amber and then red, and the hint changes to `/wash now while it's still cheap`. Once it runs out it says `cache expired` in grey until your next message.
+- It's timed from when Claude Code sends each request, read from the end of the session file, and rounded down with a 10-second margin. A model switch shows it expired at once. After `/compact` or `/clear` it hides until the next reply. If it can't tell, it shows nothing.
+- It checks itself: when a reply comes after a pause the timer said the cache would survive, the reply shows whether it did. `carwash doctor` shows the method and the result. Replayed over a month of real sessions, it called the cache warm after 433 pauses and was right every time.
+- In 80 columns, `/wash to compress, then /clear` shortens to `/wash to compress` to make room for the timer.
+- `CARWASH_NO_CACHE_TIMER=1` turns it off. Claude Code only; Codex is unchanged.
+- `/wash help` and the README explain the timer, and `carwash preview` shows its colours.
+
 ## 0.2.5
 
 - After you update, your next session says what's new, once, in Claude Code and in Codex. It waits for a start with nothing else to say, so it never gets in the way of a brief loading. Updating from 0.2.3 or earlier, it tells you about notes on what to keep.

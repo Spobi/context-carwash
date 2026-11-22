@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { packageVersion } from '../install/install.mjs';
 import { statusNotice } from '../install/notice.mjs';
 import { installRecordPath } from '../paths.mjs';
+import { cacheTimer } from './cache.mjs';
 import { render } from './render.mjs';
 import { washState } from './state.mjs';
 import { availableColumns, visibleWidth } from './terminal.mjs';
@@ -144,7 +145,17 @@ export async function statusline({ input, env = process.env, platform = process.
     } catch {
       // Without it the meter still renders, minus any word about a brief.
     }
-    return withNotice(compose(theirs, payload, { env, platform, state }), env);
+    // The timer goes beside an invitation to wash. While a brief is being
+    // written or waits for /clear, a fresh start is coming anyway.
+    let cache = null;
+    if (!state) {
+      try {
+        cache = cacheTimer(payload, { env });
+      } catch {
+        // No timer is better than a wrong one.
+      }
+    }
+    return withNotice(compose(theirs, payload, { env, platform, state, cache }), env);
   } catch {
     return (theirs ?? '').replace(/\s+$/, '');
   }

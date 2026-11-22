@@ -35,6 +35,21 @@ export function loadUsage(env, sessionId) {
   return usage && Number.isFinite(usage.used) && usage.used > 0 ? usage : null;
 }
 
+// What the cache timer last found in this session's file, with the file's size
+// and time, so a redraw while nothing has changed does not read it again.
+export function saveCacheNote(env, sessionId, data) {
+  const file = note(env, sessionId, 'cache');
+  if (!file) return;
+  privateDir(sessionsDir(env));
+  writeFileAtomic(file, JSON.stringify(data), 0o600);
+}
+
+export function loadCacheNote(env, sessionId) {
+  const file = note(env, sessionId, 'cache');
+  const data = file && readJson(file);
+  return data && typeof data === 'object' ? data : null;
+}
+
 // A wash in progress: /wash was run and its reply has not been captured yet.
 export function startWash(env, sessionId, wash) {
   const file = note(env, sessionId, 'wash');

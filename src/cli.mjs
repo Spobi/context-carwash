@@ -76,6 +76,9 @@ function preview(env, stdout) {
   for (const width of [120, 100, 80, 60, 30, 10]) out.push(`  ${String(width).padStart(3)} cols  ${render(sample(68), { env, columns: width - 4 }).text}`);
   out.push('', `This window (${columns + 4} columns), before any reply has arrived, then with 136k in use:`);
   out.push(`  ${render({}, { env, columns }).text}`, `  ${render(sample(68), { env, columns }).text}`);
+  out.push('', "With the cache timer: plain, then amber and red in the cache's last 10 minutes, grey once it has expired:");
+  const hour = 60 * 60_000;
+  for (const minutes of [42, 7, 3, 0]) out.push(`  ${render(sample(68), { env, columns, cache: { leftMs: minutes * 60_000, ttlMs: hour } }).text}`);
   out.push('', 'While /wash is writing a brief, and once one is ready for /clear:');
   out.push(`  ${render(sample(68), { env, columns, state: { washing: 'mid' } }).text}`);
   out.push(`  ${render(sample(68), { env, columns, state: { ready: { level: 'mid', tokens: 3100 } } }).text}`);

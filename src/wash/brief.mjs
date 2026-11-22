@@ -161,16 +161,21 @@ export function welcomeMessage(tool = 'claude') {
 }
 
 // What a release brings that someone updating should hear about, in the
-// tool's own command. Most releases add nothing here.
+// tool's own command, or null where it does not apply to that tool. Most
+// releases add nothing here.
 const WHATS_NEW = [
   ['0.2.4', (wash) => `Name what a brief must keep: ${wash} keep the exact error. It gets its own section and is never cut to save space.`],
+  ['0.2.7', (wash, tool) => (tool === 'claude' ? "Cache timer: the status line shows how long Claude's cache of this conversation stays warm (cache 42m). Your first message after it expires costs much more, so wash before then." : null)],
 ];
 
 // Shown once, at the first quiet session after an update: what is new since
 // `from`, or null when nothing is worth saying.
 export function whatsNewMessage(from, to, tool = 'claude') {
   const { wash } = toolInfo(tool);
-  const lines = WHATS_NEW.filter(([version]) => isNewer(version, from) && !isNewer(version, to)).map(([, line]) => `  • ${line(wash)}`);
+  const lines = WHATS_NEW.filter(([version]) => isNewer(version, from) && !isNewer(version, to))
+    .map(([, line]) => line(wash, tool))
+    .filter(Boolean)
+    .map((line) => `  • ${line}`);
   return lines.length ? [`Context Carwash updated to ${to} ✓ (shown once)`, ...lines].join('\n') : null;
 }
 
@@ -180,6 +185,9 @@ const LEVEL_NOTES = {
   mid: 'adds decisions, constraints, pitfalls (the default)',
   detailed: 'adds reasoning, history, test results, a checklist',
 };
+
+export const CACHE_HELP =
+  "cache 42m is how long Claude's cache of this conversation stays warm. Until then each message reads the conversation from the cache cheaply. The first message after it expires writes it all to the cache again, which on a big conversation costs dozens of times as much. In the last 10 minutes the timer turns amber, then red, and the hint says /wash now while it's still cheap.";
 
 // /wash help. `used` is this session's reading, when known, so each level can
 // show the most tokens its brief may take here.
@@ -204,7 +212,12 @@ export function helpMessage(used, footer = null, tool = 'claude') {
     '',
     `Add a note to name what the brief must keep: ${wash} keep the exact error, or ${wash} detailed keep the test names.`,
     '',
-    ...(meter ? ["The status line shows how many tokens this conversation is using, and the bar shows how close that is to the model's limit."] : []),
+    ...(meter
+      ? [
+          "The status line shows how many tokens this conversation is using, and the bar shows how close that is to the model's limit.",
+          CACHE_HELP,
+        ]
+      : []),
     ...(replyMeter ? ["The line after each reply shows how many tokens this conversation is using, and the bar shows how close that is to the model's limit. It is shown to you only and costs no tokens."] : []),
     `Writing a brief is an ordinary ${model} reply, so it uses tokens. help, discard and load do not.`,
     `The old conversation is also saved as plain text for ${RECALL_DAYS} days, so the fresh session can search it for an exact detail the brief left out.`,
